@@ -147,7 +147,7 @@ for NYEAR in range(1, period.LYEAR + 1):
                     wp_ws_is = []
 
                     for w, wall in enumerate(walls):
-                        
+
                         v_air_is = wall.get_v_air_is(oc=oc, t_is=t_is)
 
                         wjrain_is = wjrain_ws_is[w]

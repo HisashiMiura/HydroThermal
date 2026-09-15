@@ -33,9 +33,13 @@ class Material:
     @classmethod
     def load(cls, name: str, row: Series):
 
+        # 熱伝導率, W/(m K)
         thermal_conductivity = row['thermal_conductivity(W/mK)']
+        # 湿気伝導率, (kg/s)/(m Pa)
         moisture_conductivity = row['moisture_conductivity(kg/msPa)']
+        # 比熱, J/(kg K)
         specific_heat = row['specific_heat(J/kgK)']
+        # 密度, kg/m3
         density = row['density(kg/m3)']
         # エクセルの方もあわせて、列ヘッダ名を porosity(m3/m3) に直すこと。
         porosity = row['porosity']
@@ -150,7 +154,7 @@ class Material:
             水分化学ポテンシャル変化に対する含水率変化, (m3/m3)/(J/kg)
         """
 
-        return modules.thermo_dynamics.get_dpsi_dmu(mu=mu, t=t, gma=self.rho, get_u=self.get_u)
+        return thermo_dynamics.get_dpsi_dmu(mu=mu, t=t, gma=self.rho, get_u=self.get_u)
 
     @property
     def c_rho(self):
