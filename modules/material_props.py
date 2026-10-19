@@ -1,5 +1,17 @@
 import math
 from dataclasses import dataclass
+from functools import lru_cache
+from types import CodeType
+
+
+@lru_cache(maxsize=None)
+def _compile(formula: str) -> CodeType:
+    """式の文字列を、eval ですぐに実行できる形に変換する。
+
+    同じ文字列なら、2回目以降は1回目に変換した結果をそのまま返す。
+    """
+
+    return compile(formula, '<isotherm>', 'eval')
 
 
 @dataclass(frozen=True)
@@ -34,6 +46,13 @@ class FormulaIsotherm:
     # (境目, 式) の組。境目は相対湿度(0.0～1.0)。
     conditional: tuple[tuple[float, str], ...] = ()
 
+    def __post_init__(self):
+
+        # 式に書き間違いがあれば、ここでエラーにする
+        _compile(self.formula)
+        for _, formula in self.conditional:
+            _compile(formula)
+
     def u(self, x: float) -> float:
         """相対湿度から質量含水率を求める。
 
@@ -47,6 +66,6 @@ class FormulaIsotherm:
         # 境目を超えた最初の式で計算する
         for threshold, formula in self.conditional:
             if x > threshold:
-                return eval(formula, {'math': math}, {'r': x})
+                return eval(_compile(formula), {'math': math}, {'r': x})
 
-        return eval(self.formula, {'math': math}, {'r': x})
+        return eval(_compile(self.formula), {'math': math}, {'r': x})
