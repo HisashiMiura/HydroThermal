@@ -25,6 +25,26 @@ logger = logging.getLogger(__name__)
 # 旧 Excel（Fortran 版の19材料）
 WHAMCAVITY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'materials_whamcavity.xlsx')
 
+# 旧 Excel に列がないため、Fortran（Whamcavity.f95）に直書きされている値で補う材料。
+# {材料名: (湿気伝導率の部品, 液水拡散係数の部品)}
+_WHAMCAVITY_SUPPLEMENTS = {
+
+    '構造用合板1': (
+
+        # 湿気伝導率：湿度によって変わる式（ASHRAE）。
+        # （Fortran の元のコードには「*3.45」がコメントアウトされて残っている。理由は不明。）
+        PowerExpVaporConductivity(a=1.87E-11, b=2.4019, c=-0.78864, d=1.1471),
+
+        # 液水拡散係数：Fortran の DIFF の係数と範囲（含水率 45% を超え 110% 未満）。
+        # 部品の範囲は「下限を超え、上限以下」なので、含水率がちょうど 1.10 のときだけ Fortran と異なる。
+        # （Fortran では RH 90% を超えるときだけ DIFF を呼んでいたが、構造用合板1 の含水率が 0.45 を超えるのは
+        #   RH 約 98% より上なので、範囲の判定だけで同じ結果になる。）
+        PiecewiseExpPolyDiffusivity(ranges=(
+            (0.45, 1.10, (-30.91, 4.2967, -0.22017, 0, 0, 0, 0)),
+        )),
+    ),
+}
+
 
 def load_whamcavity(path: str = WHAMCAVITY_FILE) -> list[Material]:
     """旧 Excel（materials_whamcavity.xlsx）を読み込み、Material の一覧を作る。
@@ -96,26 +116,13 @@ def _material_from_whamcavity_row(name: str, row: Series) -> Material:
 
     isotherm = FormulaIsotherm(formula=formula1, conditional=conditional)
 
-    # 湿気伝導率の部品
-    # 構造用合板1 は、湿度によって変わる式（ASHRAE）を使う。
-    # 旧 Excel に係数の列がないため、Fortran（Whamcavity.f95）に直書きされている係数を使う。
-    # （Fortran の元のコードには「*3.45」がコメントアウトされて残っている。理由は不明。）
-    if name == '構造用合板1':
-        vapor_conductivity = PowerExpVaporConductivity(a=1.87E-11, b=2.4019, c=-0.78864, d=1.1471)
+    # 湿気伝導率と液水拡散係数の部品
+    # 旧 Excel の湿気伝導率は固定値だけで、液水拡散係数の列はない。
+    # 補う値がある材料（_WHAMCAVITY_SUPPLEMENTS）はその値を、ほかの材料は固定値と「液水が移動しない」を使う。
+    if name in _WHAMCAVITY_SUPPLEMENTS:
+        vapor_conductivity, liquid_diffusivity = _WHAMCAVITY_SUPPLEMENTS[name]
     else:
         vapor_conductivity = ConstantVaporConductivity(value=moisture_conductivity)
-
-    # 液水拡散係数の部品
-    # 構造用合板1 だけ液水が移動する。旧 Excel に係数の列がないため、
-    # Fortran（Whamcavity.f95 の DIFF）に直書きされている係数と範囲（含水率 45% を超え 110% 未満）を使う。
-    # 部品の範囲は「下限を超え、上限以下」なので、含水率がちょうど 1.10 のときだけ Fortran と異なる。
-    # （Fortran では RH 90% を超えるときだけ DIFF を呼んでいたが、構造用合板1 の含水率が 0.45 を超えるのは
-    #   RH 約 98% より上なので、範囲の判定だけで同じ結果になる。）
-    if name == '構造用合板1':
-        liquid_diffusivity = PiecewiseExpPolyDiffusivity(ranges=(
-            (0.45, 1.10, (-30.91, 4.2967, -0.22017, 0, 0, 0, 0)),
-        ))
-    else:
         liquid_diffusivity = NoLiquidDiffusivity()
 
     return Material(
