@@ -67,8 +67,67 @@ def test_liquid_diffusivity_from_ranges_1(u):
     assert d.d_w(u) == pytest.approx(math.exp(-32.285 + 272.18 * u), rel=1e-12)
 
 
+
+# No.1 MEWS Aerated Concrete の値（範囲分け数 3）
+_RANGES_NO1 = [
+    (None, 0.087, (-18.55994281128587, 0, 0, 0, 0, 0, 0)),
+    (0.087, 0.54, (-15.073, -63.312, 324.96, -731.86, 623.3, 0, 0)),
+    (0.54, 1.3, (-16.772022118364983, 0, 0, 0, 0, 0, 0)),
+]
+
+# No.2 MEWS Oriented Strand Board の値（範囲分け数 2）。区間3 の欄は Excel では 0
+_RANGES_NO2 = [
+    (None, 0.92, (-18.023, -34.413, 140.32, -285.57, 277.28, -102.33, 0)),
+    (0.92, 1.4, (-21.996231512759298, 0, 0, 0, 0, 0, 0)),
+    (0, 0, (0, 0, 0, 0, 0, 0, 0)),
+]
+
+
+def _exp_poly(coefficients, u):
+    """exp(a + b·u + c·u^2 + d·u^3 + e·u^4 + f·u^5 + g·u^6) を求める（テストの期待値用）。"""
+    a, b, c, d, e, f, g = coefficients
+    return math.exp(a + b * u + c * u**2 + d * u**3 + e * u**4 + f * u**5 + g * u**6)
+
+
+@pytest.mark.parametrize('u, i', [
+    (0.0, 0),    # 含水率 0 でも区間1（下限は −∞）
+    (0.05, 0),
+    (0.087, 0),  # 区間1と区間2の境目ちょうどは下側の区間1
+    (0.3, 1),
+    (0.54, 1),   # 区間2と区間3の境目ちょうどは下側の区間2
+    (0.8, 2),
+])
+def test_liquid_diffusivity_from_ranges_3(u, i):
+    """範囲分け数 3 のとき、含水率が入る区間の式を使うことを確認する（No.1 の値）。"""
+
+    d = _liquid_diffusivity_from_ranges(3, _RANGES_NO1)
+
+    assert d.d_w(u) == pytest.approx(_exp_poly(_RANGES_NO1[i][2], u), rel=1e-12)
+
+
+@pytest.mark.parametrize('u, i', [
+    (0.0, 0),
+    (0.5, 0),
+    (1.2, 1),
+])
+def test_liquid_diffusivity_from_ranges_2(u, i):
+    """範囲分け数 2 のとき、区間1・2の式を使うことを確認する（No.2 の値）。"""
+
+    d = _liquid_diffusivity_from_ranges(2, _RANGES_NO2)
+
+    assert d.d_w(u) == pytest.approx(_exp_poly(_RANGES_NO2[i][2], u), rel=1e-12)
+
+
+def test_liquid_diffusivity_from_ranges_2_ignores_range3():
+    """範囲分け数 2 のとき、区間3 の欄の値は使わないことを確認する（No.2 の値）。"""
+
+    d = _liquid_diffusivity_from_ranges(2, _RANGES_NO2)
+
+    assert len(d.ranges) == 2
+
+
 def test_liquid_diffusivity_from_ranges_not_implemented():
-    """範囲分け数 2 のとき、まだ対応していないので NotImplementedError になることを確認する。"""
+    """範囲分け数 4 のとき、まだ対応していないので NotImplementedError になることを確認する。"""
 
     with pytest.raises(NotImplementedError):
-        _liquid_diffusivity_from_ranges(2, [(None, 0.1, (-20, 0, 0, 0, 0, 0, 0)), (0.1, 0.5, (-18, 0, 0, 0, 0, 0, 0))])
+        _liquid_diffusivity_from_ranges(4, _RANGES_NO1)

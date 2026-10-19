@@ -150,7 +150,9 @@ def _liquid_diffusivity_from_ranges(
     範囲分け数ごとの扱い:
         0: 液水が移動しない（係数の値は使わない。a に「測っていない」の印 ln(99999) が入っている材料もある）
         1: 区間1の式を、含水率によらず使う（Excel の範囲は使わない）
-        2 以上: まだ対応していない
+        2・3: 区間1から範囲分け数の区間までを使う。区間1の下限は Excel に値がないので −∞ とする。
+              区間と区間のすき間、最後の区間の上限を超える含水率では 0 になる（部品の決まり。扱いは 2-2-3 で決める）
+        4 以上: まだ対応していない
 
     Args:
         n_ranges: 範囲分け数
@@ -165,5 +167,11 @@ def _liquid_diffusivity_from_ranges(
     if n_ranges == 1:
         _, _, coefficients = ranges[0]
         return PiecewiseExpPolyDiffusivity(ranges=((-math.inf, math.inf, tuple(coefficients)),))
+
+    if n_ranges in (2, 3):
+        _, upper1, coefficients1 = ranges[0]
+        first = (-math.inf, upper1, tuple(coefficients1))
+        others = tuple((lower, upper, tuple(coefficients)) for lower, upper, coefficients in ranges[1:n_ranges])
+        return PiecewiseExpPolyDiffusivity(ranges=(first,) + others)
 
     raise NotImplementedError(f'範囲分け数 {n_ranges} にはまだ対応していません')
