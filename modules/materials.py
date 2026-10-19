@@ -2,7 +2,7 @@ import pandas as pd
 from pandas import Series
 import os
 from dataclasses import dataclass
-import math
+import math  # f_psi_1～f_psi_3 で eval する Excel の式が math を使うため必要
 import logging
 from modules import thermo_dynamics
 from modules.material_props import (
@@ -120,7 +120,8 @@ class Material:
 
         # 湿気伝導率の部品
         # 構造用合板1 は、湿度によって変わる式（ASHRAE）を使う。
-        # 旧 Excel に係数の列がないため、今の get_lambda_dsh_m に直書きされている係数を使う。
+        # 旧 Excel に係数の列がないため、Fortran（Whamcavity.f95）に直書きされている係数を使う。
+        # （Fortran の元のコードには「*3.45」がコメントアウトされて残っている。理由は不明。）
         if name == '構造用合板1':
             vapor_conductivity = PowerExpVaporConductivity(a=1.87E-11, b=2.4019, c=-0.78864, d=1.1471)
         else:
@@ -175,12 +176,7 @@ class Material:
             湿気伝導率, (kg/s)/(m Pa)
         """
 
-        if self.name == '構造用合板1':
-            d = rh * 0.01
-            # *3.45   !  Moisture conductivity (kg/msPa)  ASHRAE
-            return 1.87E-11 * d**2.4019 * math.exp(-0.78864 * ( 1 - d**1.1471))
-        else:
-            return self.lambda_dsh_m
+        return self.vapor_conductivity.lambda_dsh_m(rh * 0.01)
 
     def get_lambda_dsh_mu_l(self, rh: float, t: float) -> float:
         """水分化学ポテンシャル勾配に対する液相水分伝導率, (kg/s)/(m (J/kg)) を求める。
