@@ -163,7 +163,7 @@ class Material:
 
         r = rh * 0.01
 
-        return self.f_u(r)
+        return self.isotherm.u(r)
 
     def get_lambda_dsh_m(self, rh: float) -> float:
         """湿気伝導率を求める。
