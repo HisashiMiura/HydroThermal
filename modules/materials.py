@@ -129,8 +129,10 @@ class Material:
 
         # 液水拡散係数の部品
         # 構造用合板1 だけ液水が移動する。旧 Excel に係数の列がないため、
-        # thermo_dynamics.DIFF に直書きされている係数と範囲（含水率 45% を超え 110% 未満）を使う。
-        # 部品の範囲は「下限を超え、上限以下」なので、含水率がちょうど 1.10 のときだけ DIFF と異なる。
+        # Fortran（Whamcavity.f95 の DIFF）に直書きされている係数と範囲（含水率 45% を超え 110% 未満）を使う。
+        # 部品の範囲は「下限を超え、上限以下」なので、含水率がちょうど 1.10 のときだけ Fortran と異なる。
+        # （Fortran では RH 90% を超えるときだけ DIFF を呼んでいたが、構造用合板1 の含水率が 0.45 を超えるのは
+        #   RH 約 98% より上なので、範囲の判定だけで同じ結果になる。）
         if name == '構造用合板1':
             liquid_diffusivity = PiecewiseExpPolyDiffusivity(ranges=(
                 (0.45, 1.10, (-30.91, 4.2967, -0.22017, 0, 0, 0, 0)),
@@ -187,13 +189,7 @@ class Material:
             液相水分伝導率, (kg/s)/(m (J/kg))
         """
 
-        if self.name == '構造用合板1':
-            if rh > 90.0:
-                return thermo_dynamics.DIFF(rh=rh, t=t, f_u=self.f_u)
-            else:
-                return 0.0
-        else:
-            return 0.0
+        return thermo_dynamics.get_lambda_dsh_mu_l(rh=rh, t=t, get_u=self.get_u, d_w=self.liquid_diffusivity.d_w)
 
     def get_dpsi_dmu(self, mu: float, t: float):
         """水分化学ポテンシャル変化に対する含水率変化 (DPDU) を計算する。

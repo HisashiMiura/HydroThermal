@@ -224,58 +224,50 @@ def get_rh(mu: float, t: float) -> float:
     return min(rh, 100.0) 
 
 
-def DIFF(rh:float, t: float, f_u: Callable[[float], float]):
-    """水分伝導率(RML)の計算
+def get_lambda_dsh_mu_l(rh: float, t: float, get_u: Callable[[float], float], d_w: Callable[[float], float]) -> float:
+    """水分化学ポテンシャル勾配に対する液相水分伝導率 (DIFF) を計算する。
+
+    Fortran（Whamcavity.f95）の SUBROUTINE DIFF に当たる。
+    Fortran では構造用合板の係数と範囲が直書きされていたが、ここでは液水拡散係数を求める関数 d_w を受け取る。
+
+    液相水分伝導率 = 水の密度 × 液水拡散係数 × |Δu / Δμ|
 
     Args:
-        rh: 相対湿度, %
+        rh: 相対湿度(0.0～100.0), %
         t: 絶対温度, K
-        material: 
-    Returns: 水分伝導率, (kg/ms) / (J/kg)
+        get_u: 相対湿度(%)から質量含水率(kg/kg)を求める関数
+        d_w: 質量含水率(kg/kg)から液水拡散係数(m2/s)を求める関数
+    Returns:
+        液相水分伝導率, (kg/s)/(m (J/kg))
     """
 
-    # 含水率, %
-    wd = f_u(rh=rh) * 100
-    
-    if 45 < wd < 110:
-        d1 = wd * 0.01
-        # DW = e^(a + bX + cX^2)
-        # 拡散係数, m2/s
-        # 含水率差による移動係数
-        # 拡散係数は、水分伝導率 (kg/s) / m (kg/kg)　を　水の密度（kg/m3）でわったもの。 
-        # m3/s / m kg/kg
-        dw = math.exp(-30.91 + 4.2967 * d1 - 0.22017 * (d1**2))
-        
-        rh1 = rh + 0.005
-        rh2 = rh - 0.005
-        
-        # 微分を差分で近似している計算
-        wp1 = get_wp(rh1, t)
-        wp2 = get_wp(rh2, t)
-        wd1 = f_u(rh=rh1) * 100
-        wd2 = f_u(rh=rh2) * 100
-        
-        # ゼロ除算のチェック
-        if abs(wp1 - wp2) > 1e-12:
-            # 拡散係数は、m3/s / m kg/kg
-            # これを質量基準に直すために水の密度をかける。
-            # 含水率差基準(kg/kg)ではなくて水分化学ポテンシャル差基準(J/kg)になおす。
-            # 水の密度(kg/m3) * 拡散係数(m2/s) * 含水率(kg/kg) * 相対湿度差(0.01) / 水分化学ポテンシャル(J/kg)
-            # 移動量(kg/s) / (m (J/kg)) 
-            # Δwp/Δu = Δwp/Δrh / Δu/Δrh
-            # 0.01 は必要かどうか？（要チェック）
-            # 998.0: 水の密度, kg/m3
-            # dw: 拡散係数, (m3/s) / (m kg/kg) = m2/s
-            # wd * 0.01: kg/kg
-            # wp: J/kg
-            # (kg/ms) / (J/kg)
-            rml = 998.0 * dw * abs((wd1 - wd2) * 0.01 / (wp1 - wp2))
-        else:
-            rml = 0.0
-    else:
-        rml = 0.0
-        
-    return rml
+    # 液水拡散係数, m2/s
+    dw = d_w(get_u(rh))
+
+    # 液水が移動しない（拡散係数が 0）ときは 0
+    if dw == 0.0:
+        return 0.0
+
+    # 含水率の水分化学ポテンシャルによる微分を、相対湿度 ±0.005% の差分で近似する
+    rh1 = rh + 0.005
+    rh2 = rh - 0.005
+
+    # 質量含水率, kg/kg
+    u1 = get_u(rh1)
+    u2 = get_u(rh2)
+
+    # 水分化学ポテンシャル, J/kg
+    wp1 = get_wp(rh1, t)
+    wp2 = get_wp(rh2, t)
+
+    # ゼロ除算のチェック
+    if abs(wp1 - wp2) <= 1e-12:
+        return 0.0
+
+    # 拡散係数(m2/s) は含水率差(kg/kg)を駆動力とする係数なので、
+    # 水の密度を掛けて質量基準に、Δu/Δμ を掛けて水分化学ポテンシャル差(J/kg)基準に直す。
+    # ROW: 水の密度, kg/m3
+    return ROW * dw * abs((u1 - u2) / (wp1 - wp2))
 
 
 def get_dpsi_dmu(mu: float, t: float, gma: float, get_u: callable) -> float:
