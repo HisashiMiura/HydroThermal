@@ -31,7 +31,6 @@ def test_load():
     assert m.lambda_dsh_m == 2.61E-11
     assert m.c == 0.0
     assert m.rho == 0.0
-    assert m.psi0 == 0.0
 
 
 @pytest.mark.parametrize('name', _materials.get_material_name())

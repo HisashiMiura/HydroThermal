@@ -34,9 +34,6 @@ class Material:
     # 密度 kg/m3
     rho: float
 
-    # 空隙率, m3/m3
-    psi0: float
-
     # 平衡含水率の部品
     isotherm: FormulaIsotherm
 
@@ -57,8 +54,6 @@ class Material:
         specific_heat = row['specific_heat(J/kgK)']
         # 密度, kg/m3
         density = row['density(kg/m3)']
-        # エクセルの方もあわせて、列ヘッダ名を porosity(m3/m3) に直すこと。
-        porosity = row['porosity']
 
         n_formula_branches = row['n_formula_branches']
         formula1 = str(row['formula1'])
@@ -111,7 +106,6 @@ class Material:
             lambda_dsh_m=moisture_conductivity,
             c=specific_heat,
             rho=density,
-            psi0=porosity,
             isotherm=isotherm,
             vapor_conductivity=vapor_conductivity,
             liquid_diffusivity=liquid_diffusivity
