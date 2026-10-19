@@ -123,3 +123,20 @@ class PowerExpVaporConductivity:
         """
 
         return self.a * x**self.b * math.exp(self.c * (1 - x**self.d))
+
+
+@dataclass(frozen=True)
+class NoLiquidDiffusivity:
+    """液水が移動しない材料の液水拡散係数。常に 0 を返す。"""
+
+    def d_w(self, u: float) -> float:
+        """液水拡散係数を求める。
+
+        Args:
+            u: 質量含水率, kg/kg（液水が移動しないので使わない）
+
+        Returns:
+            液水拡散係数, m2/s
+        """
+
+        return 0.0

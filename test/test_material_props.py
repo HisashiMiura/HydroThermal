@@ -6,7 +6,7 @@ import pytest
 
 
 from modules.materials import Materials
-from modules.material_props import FormulaIsotherm, ConstantVaporConductivity, PowerExpVaporConductivity
+from modules.material_props import FormulaIsotherm, ConstantVaporConductivity, PowerExpVaporConductivity, NoLiquidDiffusivity
 
 
 # materials_whamcavity.xlsx の内容
@@ -186,3 +186,12 @@ def test_power_exp_vapor_conductivity_mews_ashrae(no):
 
         # Excel と Python で計算の最後の桁がずれることがあるので、相対誤差 1e-9 で判定する。
         assert conductivity.lambda_dsh_m(x) == pytest.approx(expected, rel=1e-9, abs=0), f'x={x}'
+
+
+def test_no_liquid_diffusivity():
+    """液水が移動しない材料は、含水率によらず液水拡散係数が 0 になることを確認する。"""
+
+    diffusivity = NoLiquidDiffusivity()
+
+    for u in [0.0, 0.1, 0.5, 1.0, 2.0]:
+        assert diffusivity.d_w(u) == 0.0, f'u={u}'
