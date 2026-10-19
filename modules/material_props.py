@@ -144,21 +144,38 @@ class NoLiquidDiffusivity:
 
 @dataclass(frozen=True)
 class PiecewiseExpPolyDiffusivity:
-    """含水率によって変わる液水拡散係数。
+    """含水率の区間ごとに式を切り替える液水拡散係数。
 
-    D = exp(a + b·u + c·u^2 + d·u^3 + e·u^4 + f·u^5 + g·u^6)    u: 質量含水率, kg/kg
+    各区間の式は次のとおり。
+        D = exp(a + b·u + c·u^2 + d·u^3 + e·u^4 + f·u^5 + g·u^6)    u: 質量含水率, kg/kg
 
-    例: D = exp(-30.91 + 4.2967·u - 0.22017·u^2) の場合
-        PiecewiseExpPolyDiffusivity(coefficients=(-30.91, 4.2967, -0.22017, 0, 0, 0, 0))
+    区間を前から順に調べ、含水率が「下限を超え、上限以下」に入る最初の区間の式を使う。
+    どの区間にも入らなければ 0（液水が移動しない）とする。
+    境目ちょうどの含水率は、下側の区間に入る。
+
+    例: 含水率 0.45 を超え 1.10 以下のときだけ D = exp(-30.91 + 4.2967·u - 0.22017·u^2) とする場合
+        PiecewiseExpPolyDiffusivity(ranges=(
+            (0.45, 1.10, (-30.91, 4.2967, -0.22017, 0, 0, 0, 0)),
+        ))
+
+    例: 含水率によらず1本の式を使う場合は、下限・上限を無限大にする。
+        PiecewiseExpPolyDiffusivity(ranges=(
+            (-math.inf, math.inf, (-32.285, 272.18, 0, 0, 0, 0, 0)),
+        ))
     """
 
-    # 係数 (a, b, c, d, e, f, g)。使わない次数は 0 とする。
-    coefficients: tuple[float, float, float, float, float, float, float]
+    # (下限, 上限, 係数 (a, b, c, d, e, f, g)) の組。下限・上限は質量含水率, kg/kg。使わない次数の係数は 0 とする。
+    ranges: tuple[tuple[float, float, tuple[float, float, float, float, float, float, float]], ...]
 
     def __post_init__(self):
 
-        if len(self.coefficients) != 7:
-            raise ValueError(f'係数は a～g の7個を指定してください: {self.coefficients}')
+        for lower, upper, coefficients in self.ranges:
+
+            if len(coefficients) != 7:
+                raise ValueError(f'係数は a～g の7個を指定してください: {coefficients}')
+
+            if not lower < upper:
+                raise ValueError(f'下限は上限より小さくしてください: 下限={lower}, 上限={upper}')
 
     def d_w(self, u: float) -> float:
         """液水拡散係数を求める。
@@ -170,6 +187,13 @@ class PiecewiseExpPolyDiffusivity:
             液水拡散係数, m2/s
         """
 
-        a, b, c, d, e, f, g = self.coefficients
+        for lower, upper, coefficients in self.ranges:
 
-        return math.exp(a + b * u + c * u**2 + d * u**3 + e * u**4 + f * u**5 + g * u**6)
+            if lower < u <= upper:
+
+                a, b, c, d, e, f, g = coefficients
+
+                return math.exp(a + b * u + c * u**2 + d * u**3 + e * u**4 + f * u**5 + g * u**6)
+
+        # どの区間にも入らない
+        return 0.0

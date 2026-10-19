@@ -205,9 +205,11 @@ def test_no_liquid_diffusivity():
 
 
 def test_piecewise_exp_poly_diffusivity_diff():
-    """今の DIFF（thermo_dynamics.py）の中で計算している拡散係数と同じ値になることを確認する。"""
+    """範囲の制限をしないとき、今の DIFF（thermo_dynamics.py）の中で計算している拡散係数と同じ値になることを確認する。"""
 
-    diffusivity = PiecewiseExpPolyDiffusivity(coefficients=(-30.91, 4.2967, -0.22017, 0, 0, 0, 0))
+    diffusivity = PiecewiseExpPolyDiffusivity(ranges=(
+        (-math.inf, math.inf, (-30.91, 4.2967, -0.22017, 0, 0, 0, 0)),
+    ))
 
     # 0.00, 0.05, ..., 2.00
     for i in range(41):
@@ -218,7 +220,9 @@ def test_piecewise_exp_poly_diffusivity_diff():
 def test_piecewise_exp_poly_diffusivity_all_terms():
     """a～g のすべての項が計算に使われることを確認する。"""
 
-    diffusivity = PiecewiseExpPolyDiffusivity(coefficients=(1, 2, 3, 4, 5, 6, 7))
+    diffusivity = PiecewiseExpPolyDiffusivity(ranges=(
+        (-math.inf, math.inf, (1, 2, 3, 4, 5, 6, 7)),
+    ))
 
     # u = 0 のときは exp(a)
     assert diffusivity.d_w(0.0) == pytest.approx(math.exp(1))
@@ -230,8 +234,76 @@ def test_piecewise_exp_poly_diffusivity_all_terms():
     assert diffusivity.d_w(0.5) == pytest.approx(math.exp(sum((i + 1) * 0.5**i for i in range(7))))
 
 
+def test_piecewise_exp_poly_diffusivity_plywood():
+    """構造用合板1：含水率 0.45 を超え 1.10 以下のときだけ式で計算し、それ以外は 0 になることを確認する。"""
+
+    diffusivity = PiecewiseExpPolyDiffusivity(ranges=(
+        (0.45, 1.10, (-30.91, 4.2967, -0.22017, 0, 0, 0, 0)),
+    ))
+
+    # 0.00, 0.05, ..., 2.00
+    for i in range(41):
+        d1 = i * 0.05
+        if 0.45 < d1 <= 1.10:
+            expected = math.exp(-30.91 + 4.2967 * d1 - 0.22017 * (d1**2))
+        else:
+            expected = 0.0
+        assert diffusivity.d_w(d1) == expected, f'u={d1}'
+
+    # 境目ちょうど：下限は範囲外、上限は範囲内
+    assert diffusivity.d_w(0.45) == 0.0
+    assert diffusivity.d_w(1.10) > 0.0
+
+
+def test_piecewise_exp_poly_diffusivity_ranges():
+    """3区間：含水率の区間ごとに正しい式が選ばれることを確認する。"""
+
+    # 区間ごとに a だけを変えた一定値の式（exp(-20), exp(-19), exp(-18)）
+    diffusivity = PiecewiseExpPolyDiffusivity(ranges=(
+        (-math.inf, 0.1, (-20, 0, 0, 0, 0, 0, 0)),
+        (0.1, 0.5, (-19, 0, 0, 0, 0, 0, 0)),
+        (0.5, 1.0, (-18, 0, 0, 0, 0, 0, 0)),
+    ))
+
+    assert diffusivity.d_w(0.0) == math.exp(-20)
+    assert diffusivity.d_w(0.3) == math.exp(-19)
+    assert diffusivity.d_w(0.7) == math.exp(-18)
+
+    # 境目ちょうどは下側の区間に入る
+    assert diffusivity.d_w(0.1) == math.exp(-20)
+    assert diffusivity.d_w(0.5) == math.exp(-19)
+    assert diffusivity.d_w(1.0) == math.exp(-18)
+
+    # 最後の区間の上限を超えたら 0
+    assert diffusivity.d_w(1.2) == 0.0
+
+
+def test_piecewise_exp_poly_diffusivity_gap():
+    """区間の間にすき間があるとき、すき間の含水率では 0 になることを確認する。"""
+
+    diffusivity = PiecewiseExpPolyDiffusivity(ranges=(
+        (-math.inf, 0.1, (-20, 0, 0, 0, 0, 0, 0)),
+        (0.2, 1.0, (-19, 0, 0, 0, 0, 0, 0)),
+    ))
+
+    assert diffusivity.d_w(0.05) == math.exp(-20)
+    assert diffusivity.d_w(0.15) == 0.0
+    assert diffusivity.d_w(0.5) == math.exp(-19)
+
+
 def test_piecewise_exp_poly_diffusivity_wrong_length():
     """係数が7個でないときはエラーになることを確認する。"""
 
     with pytest.raises(ValueError):
-        PiecewiseExpPolyDiffusivity(coefficients=(-30.91, 4.2967, -0.22017))
+        PiecewiseExpPolyDiffusivity(ranges=(
+            (0.45, 1.10, (-30.91, 4.2967, -0.22017)),
+        ))
+
+
+def test_piecewise_exp_poly_diffusivity_wrong_range():
+    """下限が上限以上のときはエラーになることを確認する。"""
+
+    with pytest.raises(ValueError):
+        PiecewiseExpPolyDiffusivity(ranges=(
+            (0.5, 0.1, (-20, 0, 0, 0, 0, 0, 0)),
+        ))
