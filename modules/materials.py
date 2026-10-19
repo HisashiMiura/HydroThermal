@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from modules import thermo_dynamics
 from modules.material_props import (
     FormulaIsotherm,
+    PowerExpIsotherm,
     ConstantVaporConductivity,
     PowerExpVaporConductivity,
     NoLiquidDiffusivity,
@@ -18,8 +19,9 @@ class Material:
     # 熱伝導率, W/(m K)
     lambda_h: float
 
-    # 湿気伝導率, (kg/s)/(m Pa)
-    lambda_dsh_m: float
+    # 湿気伝導率（固定値）, (kg/s)/(m Pa)
+    # cell.py の透湿抵抗で使う。固定値のない材料（新しい Excel）は None（手順 3 で湿度依存にするまでの扱い）。
+    lambda_dsh_m: float | None
 
     # 比熱, J/(kg K)
     c: float
@@ -28,7 +30,7 @@ class Material:
     rho: float
 
     # 平衡含水率の部品
-    isotherm: FormulaIsotherm
+    isotherm: FormulaIsotherm | PowerExpIsotherm
 
     # 湿気伝導率の部品
     vapor_conductivity: ConstantVaporConductivity | PowerExpVaporConductivity

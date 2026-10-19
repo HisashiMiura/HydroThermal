@@ -14,6 +14,7 @@ from pandas import Series
 from modules.materials import Material
 from modules.material_props import (
     FormulaIsotherm,
+    PowerExpIsotherm,
     ConstantVaporConductivity,
     PowerExpVaporConductivity,
     NoLiquidDiffusivity,
@@ -25,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 # 旧 Excel（Fortran 版の19材料）
 WHAMCAVITY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'materials_whamcavity.xlsx')
+
+# 新しい Excel（MEWS 42材料・ASHRAE 38材料と Air）
+MEWS_ASHRAE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'materials_mews_ashrae.xlsx')
 
 # 旧 Excel に列がないため、Fortran（Whamcavity.f95）に直書きされている値で補う材料。
 # {材料名: (湿気伝導率の部品, 液水拡散係数の部品)}
@@ -132,6 +136,115 @@ def _material_from_whamcavity_row(name: str, row: Series) -> Material:
         lambda_dsh_m=moisture_conductivity,
         c=specific_heat,
         rho=density,
+        isotherm=isotherm,
+        vapor_conductivity=vapor_conductivity,
+        liquid_diffusivity=liquid_diffusivity
+    )
+
+
+def load_mews_ashrae(path: str = MEWS_ASHRAE_FILE) -> list[Material]:
+    """新しい Excel（materials_mews_ashrae.xlsx）の「データファイル用」シートを読み込み、Material の一覧を作る。
+
+    ほかのシート（湿気伝導率・平衡含水率・拡散係数）は人が確かめるためのもので、読まない。
+    1・2行目は見出しで、3行目から1行に1材料（No.0 Air〜No.80）が並ぶ。列の並びは _material_from_mews_ashrae_row を参照。
+
+    同じ名前の材料の扱い（2026-10-20 に決定）:
+        No.62 と No.80 は同じ名前「ASHRAE Low-density Glassfibre Batt Insulation」で、密度（11.5 / 32）だけが違う。
+        No.80 は Kumaran (2006) の材料一覧になく、No.62 の行を写して密度だけを変えたものと見られる
+        （平衡含水率の上限 f = 87 は 1000 ÷ 11.5 で、密度 11.5 のときの値のまま）。
+        2つ目以降に出てきた同じ名前の材料は、名前の後ろに密度を足して区別する（例: "... (32 kg/m3)"）。足したときはログ（WARNING）に出す。
+        Excel の値は変えない。足しても重なるときは ValueError にする。
+
+    湿気伝導率の固定値 lambda_dsh_m は、新しい Excel に列がないので None とする（2026-10-20 に決定）。
+    cell.py の透湿抵抗は今はこの固定値を使うので、手順 3（湿度依存にする）の前に、これらの材料を壁の計算に使うことはできない。
+
+    Args:
+        path: Excel ファイルのパス（省略すると modules/materials_mews_ashrae.xlsx）
+    Returns:
+        Material の一覧
+    """
+
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f'材料物性ファイルが見つかりません: {path}')
+
+    # 見出しの2行を飛ばし、列は位置で読む（見出しに同じ名前 a, b, … が何度も出てくるため）
+    df = pd.read_excel(path, sheet_name='データファイル用', header=None, skiprows=2, usecols=range(44))
+
+    # No が空の行（表の外）は読まない
+    df = df[df[0].notna()]
+
+    ms = []
+    names = set()
+
+    for _, row in df.iterrows():
+
+        m = _material_from_mews_ashrae_row(row=row)
+
+        if m.name in names:
+            new_name = f'{m.name} ({m.rho:g} kg/m3)'
+            logger.warning('No.%d: 同じ名前の材料があるので、名前を「%s」としました（Excel の名前: %s）', int(row[0]), new_name, m.name)
+            m.name = new_name
+
+        if m.name in names:
+            raise ValueError(f"{os.path.basename(path)} の材料名に重複があります: {m.name}")
+
+        names.add(m.name)
+        ms.append(m)
+
+    logger.info('材料物性データの読み込みに成功しました: %s（%d件）', os.path.basename(path), len(ms))
+
+    return ms
+
+
+def _material_from_mews_ashrae_row(row: Series) -> Material:
+    """新しい Excel（materials_mews_ashrae.xlsx）の「データファイル用」シートの1行から Material を作る。
+
+    列の並び（0 から数えた位置）:
+        0: No、1: 材料名、2: 乾燥密度 kg/m3、3: 比熱 J/(kg K)、4: 熱伝導率 W/(m K)、5: 透気率 m2（使わない）
+        6〜9: 湿気伝導率 a〜d
+        10: 平衡含水率の Parameter（1: 式だけ、2: x > 0.98 で直線）、11〜16: 平衡含水率 a, b, c, d, f, g
+        17: 液水拡散係数の範囲分け数
+        18〜25: 区間1 の範囲(大)、a〜g
+        26〜34: 区間2 の範囲(小)、範囲(大)、a〜g
+        35〜43: 区間3 の範囲(小)、範囲(大)、a〜g
+
+    Args:
+        row: Excel の1行
+    Returns:
+        Material
+    """
+
+    name = str(row[1])
+
+    # 湿気伝導率の部品（湿度によって変わる式）
+    vapor_conductivity = PowerExpVaporConductivity(a=row[6], b=row[7], c=row[8], d=row[9])
+
+    # 平衡含水率の部品
+    a, b, c, d, f, g = (row[k] for k in range(11, 17))
+    parameter = int(row[10])
+    if parameter == 1:
+        isotherm = PowerExpIsotherm(a=a, b=b, c=c, d=d)
+    elif parameter == 2:
+        isotherm = PowerExpIsotherm(a=a, b=b, c=c, d=d, f=f, g=g)
+    else:
+        raise ValueError(f'{name}: 平衡含水率の Parameter が不正です: {parameter}')
+
+    # 液水拡散係数の部品
+    # 区間1 は範囲(小) の欄がないので None とする（_liquid_diffusivity_from_ranges で −∞ になる）
+    ranges = [
+        (None, row[18], tuple(row[k] for k in range(19, 26))),
+        (row[26], row[27], tuple(row[k] for k in range(28, 35))),
+        (row[35], row[36], tuple(row[k] for k in range(37, 44))),
+    ]
+    liquid_diffusivity = _liquid_diffusivity_from_ranges(
+        n_ranges=int(row[17]), ranges=ranges, name=f'No.{int(row[0])} {name}', u_saturation=isotherm.u(1.0))
+
+    return Material(
+        name=name,
+        lambda_h=float(row[4]),
+        lambda_dsh_m=None,
+        c=float(row[3]),
+        rho=float(row[2]),
         isotherm=isotherm,
         vapor_conductivity=vapor_conductivity,
         liquid_diffusivity=liquid_diffusivity
