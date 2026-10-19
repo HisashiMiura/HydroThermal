@@ -7,6 +7,7 @@ import pytest
 
 from modules.material_props import (
     FormulaIsotherm,
+    PowerExpIsotherm,
     ConstantVaporConductivity,
     PowerExpVaporConductivity,
     NoLiquidDiffusivity,
@@ -37,6 +38,36 @@ def test_formula_isotherm_order():
     isotherm = FormulaIsotherm(formula='1', conditional=((0.5, '2'), (0.9, '3')))
 
     assert isotherm.u(0.95) == 2
+
+
+# No.1 MEWS Aerated Concrete の平衡含水率の係数（materials_mews_ashrae.xlsx）
+_aerated_concrete_isotherm = {'a': 0.78743, 'b': 17.297, 'c': -0.35107, 'd': 78.553}
+
+
+def test_power_exp_isotherm_at_saturation():
+    """相対湿度 100%（x = 1）のとき、含水率が a になることを確認する。"""
+
+    isotherm = PowerExpIsotherm(**_aerated_concrete_isotherm)
+
+    assert isotherm.u(1.0) == 0.78743
+
+
+def test_power_exp_isotherm_value():
+    """式 u = a·x^b·exp(c·(1 − x^d)) をそのまま書いて計算した値と一致することを確認する。"""
+
+    isotherm = PowerExpIsotherm(**_aerated_concrete_isotherm)
+
+    for x in [0.5, 0.9, 0.98]:
+        expected = 0.78743 * x**17.297 * math.exp(-0.35107 * (1 - x**78.553))
+        assert isotherm.u(x) == expected, f'x={x}'
+
+
+def test_power_exp_isotherm_at_zero():
+    """相対湿度 0%（x = 0）のとき、含水率が 0 になることを確認する。"""
+
+    isotherm = PowerExpIsotherm(**_aerated_concrete_isotherm)
+
+    assert isotherm.u(0.0) == 0.0
 
 
 def test_constant_vapor_conductivity():

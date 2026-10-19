@@ -72,6 +72,41 @@ class FormulaIsotherm:
 
 
 @dataclass(frozen=True)
+class PowerExpIsotherm:
+    """係数で与える平衡含水率曲線（materials_mews_ashrae.xlsx 用）。
+
+    u = a · x^b · exp(c · (1 − x^d))    x: 相対湿度(0.0～1.0)
+
+    a は相対湿度 100% のときの含水率になる（x = 1 のとき u = a）。
+    式は materials_mews_ashrae.xlsx の「平衡含水率」シートの式に合わせた。
+    """
+
+    # 係数, kg/kg
+    a: float
+
+    # 係数, -
+    b: float
+
+    # 係数, -
+    c: float
+
+    # 係数, -
+    d: float
+
+    def u(self, x: float) -> float:
+        """相対湿度から質量含水率を求める。
+
+        Args:
+            x: 相対湿度(0.0～1.0)
+
+        Returns:
+            質量含水率, kg/kg
+        """
+
+        return self.a * x**self.b * math.exp(self.c * (1 - x**self.d))
+
+
+@dataclass(frozen=True)
 class ConstantVaporConductivity:
     """相対湿度によらず一定の湿気伝導率。"""
 
