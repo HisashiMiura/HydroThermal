@@ -141,7 +141,8 @@ def _material_from_whamcavity_row(name: str, row: Series) -> Material:
 def _liquid_diffusivity_from_ranges(
         n_ranges: int,
         ranges: list[tuple[float, float, tuple[float, float, float, float, float, float, float]]],
-        name: str = ''
+        name: str = '',
+        u_saturation: float | None = None
 ) -> NoLiquidDiffusivity | PiecewiseExpPolyDiffusivity:
     """新しい Excel（materials_mews_ashrae.xlsx）の「範囲分け数」と区間の値から、液水拡散係数の部品を作る。
 
@@ -152,7 +153,7 @@ def _liquid_diffusivity_from_ranges(
         0: 液水が移動しない（係数の値は使わない。a に「測っていない」の印 ln(99999) が入っている材料もある）
         1: 区間1の式を、含水率によらず使う（Excel の範囲は使わない）
         2・3: 区間1から範囲分け数の区間までを使う。区間1の下限は Excel に値がないので −∞ とする。
-              最後の区間の上限を超える含水率では 0 になる（部品の決まり。扱いは 2-2-3 で決める）
+              最後の区間の上限を超える含水率には、上限での値で一定の区間を足す（下の説明）
         4 以上: まだ対応していない
 
     区間と区間のすき間の埋め方（2026-10-20 に決定）:
@@ -166,10 +167,22 @@ def _liquid_diffusivity_from_ranges(
         埋めたときは、材料名と値をログ（INFO）に出す。Excel の値は変えない。
         区間が重なっている（前の区間の上限が次の区間の下限より大きい）ときは、Excel の誤りとして ValueError にする。
 
+    最後の区間の上限を超える含水率の扱い（2026-10-20 に決定）:
+        Excel の区間は最後の区間の上限で終わっていて、それを超える含水率にはどの区間の式も当てはまらない。
+        最後の区間の後ろに「上限から +∞ まで、上限での値で一定」の区間を足す（多項式の材料は上限での値を計算して定数にする）。
+        例: No.49 Fibreboard は最後の区間「0.094〜1.5」（6次式）→ 含水率 1.5 を超えたら 1.5 での値 1.0×10^-9 m2/s で一定。
+        理由:
+            - MEWS も ASHRAE も、測った範囲より上は「端の値で一定」として延ばしている。その延ばし方を上限の外まで続ける。
+            - 0 にすると、RH 100% 近くで拡散係数が急に 0 になる（8 材料: No.28・49・58・63・66・67・73・74）。
+            - 最後の区間の式をそのまま延ばすと、範囲の外で多項式を使うことになり、No.49 では 10^-81 まで下がる。
+        RH 100% の平衡含水率 u_saturation が最後の区間の上限より大きい（計算結果が変わる）材料だけ、材料名と値をログ（INFO）に出す。
+        ほかの材料は含水率が上限を超えないので、足した区間は使われない。Excel の値は変えない。
+
     Args:
         n_ranges: 範囲分け数
         ranges: 区間1から順に (下限, 上限, 係数 (a, b, c, d, e, f, g)) を並べたもの。下限・上限は質量含水率, kg/kg
         name: 材料の名前（ログとエラーのメッセージに使う）
+        u_saturation: RH 100% の平衡含水率, kg/kg（ログを出すかどうかの判断だけに使う。省略するとログを出さない）
     Returns:
         液水拡散係数の部品
     """
@@ -196,6 +209,14 @@ def _liquid_diffusivity_from_ranges(
                 logger.info('%s: 液水拡散係数の区間%dと区間%dのすき間（%s〜%s）を、区間%dを延ばして埋めました',
                             name, i + 1, i + 2, upper, next_lower, i + 1)
                 used[i] = (lower, next_lower, coefficients)
+
+        # 最後の区間の上限を超える含水率は、上限での値で一定とする
+        _, upper_last, coefficients_last = used[-1]
+        a_last = sum(c * upper_last**k for k, c in enumerate(coefficients_last))
+        used.append((upper_last, math.inf, (a_last, 0, 0, 0, 0, 0, 0)))
+        if u_saturation is not None and u_saturation > upper_last:
+            logger.info('%s: 液水拡散係数の最後の区間の上限 %s を超える含水率（RH 100%% で %.3g）は、上限での値 %.2g m2/s で一定としました',
+                        name, upper_last, u_saturation, math.exp(a_last))
 
         return PiecewiseExpPolyDiffusivity(ranges=tuple(used))
 

@@ -120,11 +120,15 @@ def test_liquid_diffusivity_from_ranges_2(u, i):
 
 
 def test_liquid_diffusivity_from_ranges_2_ignores_range3():
-    """範囲分け数 2 のとき、区間3 の欄の値は使わないことを確認する（No.2 の値）。"""
+    """範囲分け数 2 のとき、区間3 の欄の値は使わないことを確認する（No.2 の値）。
+
+    部品の区間は、区間1・2 と、上限を超える含水率のために足した区間の 3 つになる。
+    """
 
     d = _liquid_diffusivity_from_ranges(2, _RANGES_NO2)
 
-    assert len(d.ranges) == 2
+    assert len(d.ranges) == 3
+    assert d.ranges[2][:2] == (1.4, math.inf)
 
 
 
@@ -170,6 +174,40 @@ def test_liquid_diffusivity_from_ranges_overlap():
 
     with pytest.raises(ValueError, match='重なって'):
         _liquid_diffusivity_from_ranges(2, ranges)
+
+
+
+# No.49 ASHRAE Fibreboard の値（範囲分け数 2）。最後の区間は 6 次式で、RH 100% の平衡含水率 2.71 が上限 1.5 より大きい
+_RANGES_NO49 = [
+    (None, 0.058, (-36.841361487904734, 0, 0, 0, 0, 0, 0)),
+    (0.094, 1.5, (-21.996, 11.89, -41.679, 72.337, -66.29, 30.704, -5.6596)),
+    (0, 0, (0, 0, 0, 0, 0, 0, 0)),
+]
+
+
+@pytest.mark.parametrize('ranges, n, i, upper', [
+    (_RANGES_NO1, 3, 2, 1.3),    # 最後の区間が定数
+    (_RANGES_NO49, 2, 1, 1.5),   # 最後の区間が多項式
+])
+@pytest.mark.parametrize('excess', [0.0, 0.1, 1.0, 100.0])
+def test_liquid_diffusivity_from_ranges_above_last(ranges, n, i, upper, excess):
+    """最後の区間の上限を超える含水率では、上限での値で一定になることを確認する。"""
+
+    d = _liquid_diffusivity_from_ranges(n, ranges)
+
+    assert d.d_w(upper + excess) == pytest.approx(_exp_poly(ranges[i][2], upper), rel=1e-12)
+
+
+def test_liquid_diffusivity_from_ranges_above_last_log(caplog):
+    """RH 100% の平衡含水率が最後の区間の上限より大きい材料だけ、ログが出ることを確認する。"""
+
+    with caplog.at_level(logging.INFO, logger='modules.material_loaders'):
+        _liquid_diffusivity_from_ranges(2, _RANGES_NO49, name='ASHRAE Fibreboard', u_saturation=2.71)
+        _liquid_diffusivity_from_ranges(3, _RANGES_NO1, name='MEWS Aerated Concrete', u_saturation=0.787)
+
+    messages = [r.getMessage() for r in caplog.records if '最後の区間' in r.getMessage()]
+    assert len(messages) == 1
+    assert 'ASHRAE Fibreboard' in messages[0]
 
 
 def test_liquid_diffusivity_from_ranges_not_implemented():
