@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import math
 import logging
 from modules import thermo_dynamics
+from modules.material_props import FormulaIsotherm
 
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,9 @@ class Material:
     
     # 相対湿度（0から1）から含水率（0から1）を求める関数。　
     f_u: callable
+
+    # 平衡含水率の部品
+    isotherm: FormulaIsotherm
 
     @classmethod
     def load(cls, name: str, row: Series):
@@ -86,6 +90,22 @@ class Material:
 
             f_psi = f_psi_3
 
+        # 平衡含水率の部品
+        # 今の f_psi_3 と同じく、境目3 → 境目2 の順に調べるように並べる。
+        if n_formula_branches == 1:
+            candidates = []
+        elif n_formula_branches == 2:
+            candidates = [(threshold2, formula2)]
+        elif n_formula_branches == 3:
+            candidates = [(threshold3, formula3), (threshold2, formula2)]
+        else:
+            raise ValueError(f'{name}: n_formula_branches が不正です: {n_formula_branches}')
+
+        # 境目が空欄の組は選ばれることがないので除く
+        conditional = tuple((float(t), f) for t, f in candidates if not pd.isna(t))
+
+        isotherm = FormulaIsotherm(formula=formula1, conditional=conditional)
+
         return Material(
             name=name,
             lambda_h=thermal_conductivity,
@@ -93,7 +113,8 @@ class Material:
             c=specific_heat,
             rho=density,
             psi0=porosity,
-            f_u=f_psi
+            f_u=f_psi,
+            isotherm=isotherm
         )
 
     def get_u(self, rh: float) -> float:
