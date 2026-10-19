@@ -5,7 +5,7 @@ import pytest
 
 
 from modules.materials import Materials
-from modules.material_props import FormulaIsotherm, ConstantVaporConductivity
+from modules.material_props import FormulaIsotherm, ConstantVaporConductivity, PowerExpVaporConductivity
 
 
 # materials_whamcavity.xlsx の内容
@@ -110,6 +110,18 @@ def test_constant_vapor_conductivity(materials, name):
 
     current = materials.get_material(name)
     conductivity = ConstantVaporConductivity(value=_df.loc[name, 'moisture_conductivity(kg/msPa)'])
+
+    for rh in _rhs:
+        assert conductivity.lambda_dsh_m(rh * 0.01) == current.get_lambda_dsh_m(rh), f'RH={rh}%'
+
+
+def test_power_exp_vapor_conductivity(materials):
+    """構造用合板1 で、今の Material.get_lambda_dsh_m と同じ値になることを確認する。"""
+
+    current = materials.get_material('構造用合板1')
+
+    # 今の Material.get_lambda_dsh_m に直書きされている係数（ASHRAE）
+    conductivity = PowerExpVaporConductivity(a=1.87E-11, b=2.4019, c=-0.78864, d=1.1471)
 
     for rh in _rhs:
         assert conductivity.lambda_dsh_m(rh * 0.01) == current.get_lambda_dsh_m(rh), f'RH={rh}%'

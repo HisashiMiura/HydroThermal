@@ -89,3 +89,37 @@ class ConstantVaporConductivity:
         """
 
         return self.value
+
+
+@dataclass(frozen=True)
+class PowerExpVaporConductivity:
+    """相対湿度によって変わる湿気伝導率。
+
+    λ' = a · x^b · exp(c · (1 − x^d))    x: 相対湿度(0.0～1.0)
+
+    a は相対湿度 100% のときの値になる（x = 1 のとき λ' = a）。
+    """
+
+    # 係数, (kg/s)/(m Pa)
+    a: float
+
+    # 係数, -
+    b: float
+
+    # 係数, -
+    c: float
+
+    # 係数, -
+    d: float
+
+    def lambda_dsh_m(self, x: float) -> float:
+        """湿気伝導率を求める。
+
+        Args:
+            x: 相対湿度(0.0～1.0)
+
+        Returns:
+            湿気伝導率, (kg/s)/(m Pa)
+        """
+
+        return self.a * x**self.b * math.exp(self.c * (1 - x**self.d))
