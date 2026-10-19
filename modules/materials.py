@@ -175,7 +175,6 @@ class Materials:
     @classmethod
     def load(cls):
 
-        #file_name = 'material_prop.csv'
         file_name = 'materials_whamcavity.xlsx'
 
         # 絶対 path の取得
@@ -185,7 +184,6 @@ class Materials:
         if not os.path.isfile(path_and_filename):
             raise FileNotFoundError(f'材料物性ファイルが見つかりません: {path_and_filename}')
 
-        #df = pd.read_csv(path_and_filename, skipinitialspace=True, index_col='name')
         df = pd.read_excel(path_and_filename, sheet_name='material_prop', index_col='name')
 
         # インデックス（name）に重複がないかチェック
