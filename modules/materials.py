@@ -2,7 +2,6 @@ import pandas as pd
 from pandas import Series
 import os
 from dataclasses import dataclass
-import math  # f_psi_1～f_psi_3 で eval する Excel の式が math を使うため必要
 import logging
 from modules import thermo_dynamics
 from modules.material_props import (
@@ -37,9 +36,6 @@ class Material:
 
     # 空隙率, m3/m3
     psi0: float
-    
-    # 相対湿度（0から1）から含水率（0から1）を求める関数。　
-    f_u: callable
 
     # 平衡含水率の部品
     isotherm: FormulaIsotherm
@@ -71,39 +67,8 @@ class Material:
         threshold2 = row['threshold2']
         threshold3 = row['threshold3']
 
-        if n_formula_branches == 1:
-
-            def f_psi_1(r: float):
-                return eval(formula1)
-            
-            f_psi = f_psi_1
-
-        elif n_formula_branches == 2:
-
-            def f_psi_2(r: float):
-
-                if r > threshold2:
-                    return eval(formula2)
-                else:
-                    return eval(formula1)
-
-            f_psi = f_psi_2
-
-        elif n_formula_branches == 3:
-
-            def f_psi_3(r: float):
-
-                if r > threshold3:
-                    return eval(formula3)
-                elif r > threshold2:
-                    return eval(formula2)
-                else:
-                    return eval(formula1)
-
-            f_psi = f_psi_3
-
         # 平衡含水率の部品
-        # 今の f_psi_3 と同じく、境目3 → 境目2 の順に調べるように並べる。
+        # 旧 Excel では境目3 が境目2 より大きい前提なので、境目3 → 境目2 の順に調べるように並べる。
         if n_formula_branches == 1:
             candidates = []
         elif n_formula_branches == 2:
@@ -147,7 +112,6 @@ class Material:
             c=specific_heat,
             rho=density,
             psi0=porosity,
-            f_u=f_psi,
             isotherm=isotherm,
             vapor_conductivity=vapor_conductivity,
             liquid_diffusivity=liquid_diffusivity
