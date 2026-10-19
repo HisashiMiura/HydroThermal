@@ -37,6 +37,23 @@ def test_load():
     assert m.rho == 0.0
 
 
+def test_get_material_not_found():
+    """ない名前を指定したとき、KeyError になることを確認する。"""
+
+    with pytest.raises(KeyError):
+        _materials.get_material('ない材料')
+
+
+def test_get_material_duplicate():
+    """同じ名前の材料が2つあるとき、ValueError になることを確認する。"""
+
+    ms = load_whamcavity()
+    materials = Materials(ms + ms[:1])
+
+    with pytest.raises(ValueError, match=ms[0].name):
+        materials.get_material(ms[0].name)
+
+
 @pytest.mark.parametrize('name', _materials.get_material_name())
 def test_isotherm(name):
     """平衡含水率の部品が入っていて、基準値と同じ含水率になることを確認する。"""

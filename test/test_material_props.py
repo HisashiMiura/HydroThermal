@@ -2,12 +2,9 @@ import math
 import os
 
 import openpyxl
-import pandas as pd
 import pytest
 
 
-from modules.materials import Materials
-from modules.material_loaders import load_whamcavity
 from modules.material_props import (
     FormulaIsotherm,
     ConstantVaporConductivity,
@@ -15,77 +12,6 @@ from modules.material_props import (
     NoLiquidDiffusivity,
     PiecewiseExpPolyDiffusivity,
 )
-
-
-# materials_whamcavity.xlsx の内容
-_df = pd.read_excel(
-    os.path.join(os.path.dirname(__file__), '..', 'modules', 'materials_whamcavity.xlsx'),
-    sheet_name='material_prop',
-    index_col='name'
-)
-
-# 式が1本だけの材料の名前
-_single_formula_names = _df.index[_df['n_formula_branches'] == 1].tolist()
-
-# 式を切り替える材料の名前
-_multi_formula_names = _df.index[_df['n_formula_branches'] > 1].tolist()
-
-# 湿気伝導率が一定の材料の名前（構造用合板1 は今の実装で湿度依存の式を使っている）
-_constant_vapor_names = [name for name in _df.index if name != '構造用合板1']
-
-# 確認する相対湿度, %
-# 0% は、軽量モルタルの式（r**-0.120）が今の実装でも計算できないため含めない。
-_rhs = list(range(1, 100))
-
-# 境目の前後で追加で確認する相対湿度, %
-_rhs_boundary = [88.9, 89.0, 89.1, 89.5, 94.9, 95.0, 95.1, 95.5]
-
-
-def _make_isotherm(row: pd.Series) -> FormulaIsotherm:
-    """Excel の1行から FormulaIsotherm を作る。今の Material.load と同じ順で判定するように並べる。"""
-
-    n = row['n_formula_branches']
-
-    if n == 1:
-        candidates = []
-    elif n == 2:
-        candidates = [(row['threshold2'], row['formula2'])]
-    elif n == 3:
-        candidates = [(row['threshold3'], row['formula3']), (row['threshold2'], row['formula2'])]
-    else:
-        raise ValueError(f'n_formula_branches が不正です: {n}')
-
-    # 境目が空欄の組は選ばれることがないので除く
-    conditional = tuple((float(t), str(f)) for t, f in candidates if not pd.isna(t))
-
-    return FormulaIsotherm(formula=str(row['formula1']), conditional=conditional)
-
-
-@pytest.fixture(scope='module')
-def materials():
-    return Materials(load_whamcavity())
-
-
-@pytest.mark.parametrize('name', _single_formula_names)
-def test_formula_isotherm_single(materials, name):
-    """式1本の材料で、今の Material.get_u と同じ含水率になることを確認する。"""
-
-    current = materials.get_material(name)
-    isotherm = FormulaIsotherm(formula=str(_df.loc[name, 'formula1']))
-
-    for rh in _rhs:
-        assert isotherm.u(rh * 0.01) == current.get_u(rh), f'RH={rh}%'
-
-
-@pytest.mark.parametrize('name', _multi_formula_names)
-def test_formula_isotherm_multi(materials, name):
-    """式を切り替える材料で、今の Material.get_u と同じ含水率になることを確認する。"""
-
-    current = materials.get_material(name)
-    isotherm = _make_isotherm(_df.loc[name])
-
-    for rh in _rhs + _rhs_boundary:
-        assert isotherm.u(rh * 0.01) == current.get_u(rh), f'RH={rh}%'
 
 
 def test_formula_isotherm_two_formulas():
@@ -113,27 +39,13 @@ def test_formula_isotherm_order():
     assert isotherm.u(0.95) == 2
 
 
-@pytest.mark.parametrize('name', _constant_vapor_names)
-def test_constant_vapor_conductivity(materials, name):
-    """湿気伝導率が一定の材料で、今の Material.get_lambda_dsh_m と同じ値になることを確認する。"""
+def test_constant_vapor_conductivity():
+    """湿気伝導率が一定の部品は、相対湿度によらず与えた値を返すことを確認する。"""
 
-    current = materials.get_material(name)
-    conductivity = ConstantVaporConductivity(value=_df.loc[name, 'moisture_conductivity(kg/msPa)'])
+    conductivity = ConstantVaporConductivity(value=2.61E-11)
 
-    for rh in _rhs:
-        assert conductivity.lambda_dsh_m(rh * 0.01) == current.get_lambda_dsh_m(rh), f'RH={rh}%'
-
-
-def test_power_exp_vapor_conductivity(materials):
-    """構造用合板1 で、今の Material.get_lambda_dsh_m と同じ値になることを確認する。"""
-
-    current = materials.get_material('構造用合板1')
-
-    # 今の Material.get_lambda_dsh_m に直書きされている係数（ASHRAE）
-    conductivity = PowerExpVaporConductivity(a=1.87E-11, b=2.4019, c=-0.78864, d=1.1471)
-
-    for rh in _rhs:
-        assert conductivity.lambda_dsh_m(rh * 0.01) == current.get_lambda_dsh_m(rh), f'RH={rh}%'
+    for x in [0.0, 0.3, 0.5, 0.9, 1.0]:
+        assert conductivity.lambda_dsh_m(x) == 2.61E-11, f'x={x}'
 
 
 # materials_mews_ashrae.xlsx（Excel が計算した値を読むため data_only=True で開く）
@@ -206,7 +118,7 @@ def test_no_liquid_diffusivity():
 
 
 def test_piecewise_exp_poly_diffusivity_diff():
-    """範囲の制限をしないとき、今の DIFF（thermo_dynamics.py）の中で計算している拡散係数と同じ値になることを確認する。"""
+    """範囲の制限をしないとき、Fortran（Whamcavity.f95）の DIFF の拡散係数と同じ値になることを確認する。"""
 
     diffusivity = PiecewiseExpPolyDiffusivity(ranges=(
         (-math.inf, math.inf, (-30.91, 4.2967, -0.22017, 0, 0, 0, 0)),
