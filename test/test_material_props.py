@@ -1,5 +1,6 @@
 import os
 
+import openpyxl
 import pandas as pd
 import pytest
 
@@ -125,3 +126,63 @@ def test_power_exp_vapor_conductivity(materials):
 
     for rh in _rhs:
         assert conductivity.lambda_dsh_m(rh * 0.01) == current.get_lambda_dsh_m(rh), f'RH={rh}%'
+
+
+# materials_mews_ashrae.xlsx（Excel が計算した値を読むため data_only=True で開く）
+_wb_mews_ashrae = openpyxl.load_workbook(
+    os.path.join(os.path.dirname(__file__), '..', 'modules', 'materials_mews_ashrae.xlsx'),
+    data_only=True
+)
+
+
+def _read_mews_ashrae_vapor():
+    """materials_mews_ashrae.xlsx から湿気伝導率の係数と、Excel が計算した値を読む。
+
+    Returns:
+        係数の辞書 {No: (a, b, c, d)}、
+        相対湿度のリスト（0.0～1.0）、
+        Excel が計算した値の辞書 {No: [各相対湿度での値]}
+    """
+
+    # 「データファイル用」シート：A列 No、G～J列 係数 a～d（3行目から）
+    ws = _wb_mews_ashrae['データファイル用']
+    coefficients = {
+        ws.cell(row, 1).value: tuple(ws.cell(row, col).value for col in range(7, 11))
+        for row in range(3, ws.max_row + 1)
+        if ws.cell(row, 1).value is not None
+    }
+
+    # 「湿気伝導率」シート：2行目 相対湿度（G列から）、3行目から A列 No と G列以降 計算値
+    # 84行目より下はグラフ表示用の別の表なので、No が数値の行だけを読む。
+    ws = _wb_mews_ashrae['湿気伝導率']
+    xs = [ws.cell(2, col).value for col in range(7, ws.max_column + 1)]
+    expected = {}
+    for row in range(3, ws.max_row + 1):
+        no = ws.cell(row, 1).value
+        if not isinstance(no, int):
+            break
+        expected[no] = [ws.cell(row, col).value for col in range(7, ws.max_column + 1)]
+
+    return coefficients, xs, expected
+
+
+_vapor_coefficients, _vapor_xs, _vapor_expected = _read_mews_ashrae_vapor()
+
+
+@pytest.mark.parametrize('no', list(_vapor_expected.keys()))
+def test_power_exp_vapor_conductivity_mews_ashrae(no):
+    """新しい Excel の材料で、Excel が計算した湿気伝導率と同じ値になることを確認する。"""
+
+    a, b, c, d = _vapor_coefficients[no]
+    conductivity = PowerExpVaporConductivity(a=a, b=b, c=c, d=d)
+
+    for x, expected in zip(_vapor_xs, _vapor_expected[no]):
+
+        if expected == '#DIV/0!':
+            # d が負の材料（No.28 Fibreboard II）は x = 0 で 0 の負の数乗になり、Excel でも計算できない。
+            with pytest.raises(ZeroDivisionError):
+                conductivity.lambda_dsh_m(x)
+            continue
+
+        # Excel と Python で計算の最後の桁がずれることがあるので、相対誤差 1e-9 で判定する。
+        assert conductivity.lambda_dsh_m(x) == pytest.approx(expected, rel=1e-9, abs=0), f'x={x}'
