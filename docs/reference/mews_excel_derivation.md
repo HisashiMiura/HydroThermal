@@ -26,6 +26,15 @@ ASHRAE の材料（No.43〜80）は、出典の報告書（RP-1018）が手元�
 
 ## 2. 調べ方と限界
 
+### 出典資料の入手先
+出典資料は他の人が書いたものなので、リポジトリには入れていない。次の場所から入手できる（2026-10-20 に確認）。
+
+- `IRC_report_rr110.pdf`：Kumaran, M.K., Lackey, J.C., Normandin, N., van Reenen, D., Tariku, F. (2002) "Summary report from Task 3 of MEWS Project at the Institute for Research in Construction: hygrothermal properties of several building materials", IRC Research Report RR-110（無料）：https://nrc-publications.canada.ca/eng/view/object/?id=82a4a334-a1dd-4701-a32d-d02e4232b39a
+- `homepages.doc`：3 つの部分からなる。
+  1. IRC の広報誌 Construction Innovation 第8巻第4号（2003年12月）の記事「Results of IRC's material properties studies now available」（Kumaran）：https://nrc-publications.canada.ca/eng/view/object/?id=0e1e4021-5691-48b9-aeea-825135c95a23
+  2. IRC のホームページの文章（データの入手方法）：元の場所は http://irc.nrc-cnrc.gc.ca/bes/hygro/dbase.html 。今は公開されていない（2026-10-20 に探したが見つからなかった）。
+  3. IRC Hygrothermal Properties Database（ソフト）の説明書の一部（99999 = 測っていない、透気率の換算方法）：今は公開されていない。
+
 ### 調べ方
 1. RR-110 の PDF から表を文字として取り出し、`mews_check/rr110_tables.py` に書き写した。
 2. Excel の「データファイル用」の係数から、プログラムと同じ式（`modules/material_props.py` の部品）で値を計算し、表の値と比べた（`mews_check/check_mews.py`）。比べた結果は `mews_check/output.txt`。

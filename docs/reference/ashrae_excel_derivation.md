@@ -27,6 +27,15 @@
 | Kumaran, M.K. (2006) "A Thermal and Moisture Property Database for Common Building and Insulation Materials", ASHRAE Transactions 112(2), pp.1-13（NRCC-45692、NRC Publications Archive） | RP-1018 の概要。37 材料の一覧と密度・厚さ・単位面積あたりの質量、試験方法、液水拡散係数の定義（式(5)）、Aerated Concrete の測定例、物性ごとに測ったかどうかの一覧（Table 9） |
 | homepages.doc | IRC Hygrothermal Properties Database の説明。99999 が「測っていない」の印であること |
 
+### 出典資料の入手先
+出典資料は他の人が書いたものなので、リポジトリには入れていない。次の場所から入手できる（2026-10-20 に確認）。
+
+- `Kumaran2006_ASHRAE_RP1018_NRCC-45692.pdf`：Kumaran (2006)（NRCC-45692）：https://nrc-publications.canada.ca/eng/view/accepted/?id=63105660-f433-4b32-a1e0-7c2df4372c94
+- `homepages.doc`：3 つの部分からなる。
+  1. IRC の広報誌 Construction Innovation 第8巻第4号（2003年12月）の記事「Results of IRC's material properties studies now available」（Kumaran）：https://nrc-publications.canada.ca/eng/view/object/?id=0e1e4021-5691-48b9-aeea-825135c95a23
+  2. IRC のホームページの文章（データの入手方法）：元の場所は http://irc.nrc-cnrc.gc.ca/bes/hygro/dbase.html 。今は公開されていない（2026-10-20 に探したが見つからなかった）。
+  3. IRC Hygrothermal Properties Database（ソフト）の説明書の一部（99999 = 測っていない、透気率の換算方法）：今は公開されていない。
+
 ### 調べたこと（`ashrae_check/check_ashrae.py`）
 1. 論文の材料一覧・密度と、Excel の密度の照合
 2. Excel の中の整合性・もっともらしさ（平衡含水率の上限、透湿率の大きさ、液水拡散係数の区間、ほかの材料と同じ値）
