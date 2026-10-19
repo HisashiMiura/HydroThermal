@@ -1,7 +1,4 @@
-import pandas as pd
-import os
 from dataclasses import dataclass
-import logging
 from modules import thermo_dynamics
 from modules.material_props import (
     FormulaIsotherm,
@@ -10,9 +7,6 @@ from modules.material_props import (
     NoLiquidDiffusivity,
     PiecewiseExpPolyDiffusivity,
 )
-
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -102,44 +96,15 @@ class Material:
 
 
 class Materials:
+    """材料の一覧。名前で材料を探す。
 
-    def __init__(self):
+    材料の一覧は、呼ぶ側がローダー（material_loaders.py）で読み込んで渡す。
+    例: Materials(load_whamcavity())
+    """
 
-        self.ms: list[Material] = self.load()
-    
-    @classmethod
-    def load(cls):
+    def __init__(self, ms: list[Material]):
 
-        file_name = 'materials_whamcavity.xlsx'
-
-        # 絶対 path の取得
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        path_and_filename = os.path.join(current_dir, file_name)
-
-        if not os.path.isfile(path_and_filename):
-            raise FileNotFoundError(f'材料物性ファイルが見つかりません: {path_and_filename}')
-
-        df = pd.read_excel(path_and_filename, sheet_name='material_prop', index_col='name')
-
-        # インデックス（name）に重複がないかチェック
-        if not df.index.is_unique:
-            # 重複している名前を特定してエラーメッセージに入れる
-            duplicates = df.index[df.index.duplicated()].unique().tolist()
-            raise ValueError(f"{file_name} の 'name' 列に重複があります: {duplicates}")
-
-        # material_loaders は Material を使うため、ファイルの先頭で読み込むと
-        # 「materials → material_loaders → materials」と互いに読み込み合ってエラーになる。
-        # そのため、ここで（呼ばれたときに）読み込む。
-        from modules.material_loaders import _material_from_whamcavity_row
-
-        # 1行ずつ取り出してデータクラスに格納
-        ms = [_material_from_whamcavity_row(name=name, row=row) for name, row in df.iterrows()]
-
-        logger.info('材料物性データの読み込みに成功しました: %s（%d件）', file_name, len(ms))
-
-        return ms
-    
-
+        self.ms: list[Material] = ms
 
     def get_material(self, name: str) -> Material:
         
@@ -154,8 +119,8 @@ class Materials:
         if len(ms) == 0:
             raise KeyError('指定の名前の材料が見つかりませんでした。')
         
-        elif len(ms) > 2:
-            raise Exception()
+        elif len(ms) > 1:
+            raise ValueError(f'同じ名前の材料が複数あります: {name}')
         
         else:
 
@@ -165,4 +130,3 @@ class Materials:
         """登録されている材料名称のリストを取得する。"""
 
         return [m.name for m in self.ms]
-    

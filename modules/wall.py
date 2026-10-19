@@ -5,6 +5,7 @@ from .weather import OutdoorCondition
 from nrain import NRAIN, get_nrains_of_walls
 from .thermo_dynamics import ATP, get_dpv_dt, get_dpv_dmu, RW, CPL, ROW_CP, COND_M_AIR, R_M_BS
 from .materials import Materials, Material
+from .material_loaders import load_whamcavity
 from .input_wall import InputWall
 from .wall_surface import WallSurface
 from modules.state import State
@@ -601,7 +602,7 @@ class Wall:
         dx_is = np.array([layers[layer_index].dx for layer_index in lookup_table])
 
         # 材料, Material クラス, [I]
-        ms = Materials()
+        ms = Materials(load_whamcavity())
         material_is = [ms.get_material(name=layers[layer_index].name) for layer_index in lookup_table]
 
         # 質点iの密度, kg/m3, [I]

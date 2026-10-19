@@ -7,6 +7,7 @@ import pytest
 
 
 from modules.materials import Materials
+from modules.material_loaders import load_whamcavity
 from modules.material_props import (
     FormulaIsotherm,
     ConstantVaporConductivity,
@@ -62,7 +63,7 @@ def _make_isotherm(row: pd.Series) -> FormulaIsotherm:
 
 @pytest.fixture(scope='module')
 def materials():
-    return Materials()
+    return Materials(load_whamcavity())
 
 
 @pytest.mark.parametrize('name', _single_formula_names)

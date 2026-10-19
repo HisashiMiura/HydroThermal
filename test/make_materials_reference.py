@@ -12,7 +12,7 @@ test_materials_reference.py は、この基準値と計算結果が一致する�
 import csv
 import os
 
-from modules.materials import Materials
+from modules.material_loaders import load_whamcavity
 from modules.thermo_dynamics import get_wp
 
 
@@ -35,7 +35,7 @@ def calculate_rows() -> list[dict]:
 
     rows = []
 
-    for m in Materials().ms:
+    for m in load_whamcavity():
         for rh in RHS:
             rows.append({
                 'name': m.name,

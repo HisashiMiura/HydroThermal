@@ -4,6 +4,9 @@ Excel の形式ごとの違い（列名、式の与え方、足りない値の�
 Material は、データの与え方を知らない形にしておく。
 """
 
+import logging
+import os
+
 import pandas as pd
 from pandas import Series
 
@@ -15,6 +18,40 @@ from modules.material_props import (
     NoLiquidDiffusivity,
     PiecewiseExpPolyDiffusivity,
 )
+
+
+logger = logging.getLogger(__name__)
+
+# 旧 Excel（Fortran 版の19材料）
+WHAMCAVITY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'materials_whamcavity.xlsx')
+
+
+def load_whamcavity(path: str = WHAMCAVITY_FILE) -> list[Material]:
+    """旧 Excel（materials_whamcavity.xlsx）を読み込み、Material の一覧を作る。
+
+    Args:
+        path: Excel ファイルのパス（省略すると modules/materials_whamcavity.xlsx）
+    Returns:
+        Material の一覧
+    """
+
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f'材料物性ファイルが見つかりません: {path}')
+
+    df = pd.read_excel(path, sheet_name='material_prop', index_col='name')
+
+    # インデックス（name）に重複がないかチェック
+    if not df.index.is_unique:
+        # 重複している名前を特定してエラーメッセージに入れる
+        duplicates = df.index[df.index.duplicated()].unique().tolist()
+        raise ValueError(f"{os.path.basename(path)} の 'name' 列に重複があります: {duplicates}")
+
+    # 1行ずつ取り出して Material を作る
+    ms = [_material_from_whamcavity_row(name=name, row=row) for name, row in df.iterrows()]
+
+    logger.info('材料物性データの読み込みに成功しました: %s（%d件）', os.path.basename(path), len(ms))
+
+    return ms
 
 
 def _material_from_whamcavity_row(name: str, row: Series) -> Material:

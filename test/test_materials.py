@@ -5,6 +5,7 @@ import pytest
 
 from modules import thermo_dynamics
 from modules.materials import Materials
+from modules.material_loaders import load_whamcavity
 from modules.material_props import (
     FormulaIsotherm,
     ConstantVaporConductivity,
@@ -15,7 +16,7 @@ from modules.material_props import (
 from test.make_materials_reference import RHS, read_reference
 
 
-_materials = Materials()
+_materials = Materials(load_whamcavity())
 
 # 基準値（作り直す前の Material の計算結果）
 _reference = read_reference()
@@ -26,7 +27,7 @@ _rhs = RHS
 
 def test_load():
 
-    ms = Materials()
+    ms = Materials(load_whamcavity())
 
     m = ms.get_material('シージング')
 
