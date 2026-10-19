@@ -12,13 +12,16 @@ from modules.material_props import (
     NoLiquidDiffusivity,
     PiecewiseExpPolyDiffusivity,
 )
+from test.make_materials_reference import RHS, read_reference
 
 
 _materials = Materials()
 
-# 確認する相対湿度, %
-# 0% は、軽量モルタルの式（r**-0.120）が今の実装でも計算できないため含めない。
-_rhs = list(range(1, 100))
+# 基準値（作り直す前の Material の計算結果）
+_reference = read_reference()
+
+# 確認する相対湿度, %（基準値ファイルと同じ。0% は軽量モルタルの式が計算できないため含まない）
+_rhs = RHS
 
 
 def test_load():
@@ -35,19 +38,20 @@ def test_load():
 
 @pytest.mark.parametrize('name', _materials.get_material_name())
 def test_isotherm(name):
-    """平衡含水率の部品が入っていて、今の get_u と同じ含水率になることを確認する。"""
+    """平衡含水率の部品が入っていて、基準値と同じ含水率になることを確認する。"""
 
     m = _materials.get_material(name)
 
     assert isinstance(m.isotherm, FormulaIsotherm)
 
     for rh in _rhs:
-        assert m.isotherm.u(rh * 0.01) == m.get_u(rh), f'RH={rh}%'
+        expected = _reference[(name, rh)]['u']
+        assert m.isotherm.u(rh * 0.01) == pytest.approx(expected, rel=1e-12), f'RH={rh}%'
 
 
 @pytest.mark.parametrize('name', _materials.get_material_name())
 def test_vapor_conductivity(name):
-    """湿気伝導率の部品が入っていて、今の get_lambda_dsh_m と同じ値になることを確認する。"""
+    """湿気伝導率の部品が入っていて、基準値と同じ値になることを確認する。"""
 
     m = _materials.get_material(name)
 
@@ -57,7 +61,8 @@ def test_vapor_conductivity(name):
         assert isinstance(m.vapor_conductivity, ConstantVaporConductivity)
 
     for rh in _rhs:
-        assert m.vapor_conductivity.lambda_dsh_m(rh * 0.01) == m.get_lambda_dsh_m(rh), f'RH={rh}%'
+        expected = _reference[(name, rh)]['lambda_dsh_m']
+        assert m.vapor_conductivity.lambda_dsh_m(rh * 0.01) == pytest.approx(expected, rel=1e-12), f'RH={rh}%'
 
 
 @pytest.mark.parametrize('name', _materials.get_material_name())

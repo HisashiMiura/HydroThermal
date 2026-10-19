@@ -49,6 +49,20 @@ def calculate_rows() -> list[dict]:
     return rows
 
 
+def read_reference() -> dict:
+    """基準値ファイルを読み込む。
+
+    Returns:
+        {(材料名, 相対湿度): {列名: 値}}
+    """
+
+    with open(REFERENCE_FILE, encoding='utf-8', newline='') as f:
+        return {
+            (row['name'], int(row['rh'])): {c: float(row[c]) for c in COLUMNS[2:]}
+            for row in csv.DictReader(f)
+        }
+
+
 def main():
 
     rows = calculate_rows()

@@ -1,26 +1,10 @@
-import csv
-
 import pytest
 
 
-from test.make_materials_reference import REFERENCE_FILE, COLUMNS, calculate_rows
+from test.make_materials_reference import COLUMNS, calculate_rows, read_reference
 
 
-def _read_reference() -> dict:
-    """基準値ファイルを読み込む。
-
-    Returns:
-        {(材料名, 相対湿度): {列名: 値}}
-    """
-
-    with open(REFERENCE_FILE, encoding='utf-8', newline='') as f:
-        return {
-            (row['name'], int(row['rh'])): {c: float(row[c]) for c in COLUMNS[2:]}
-            for row in csv.DictReader(f)
-        }
-
-
-_reference = _read_reference()
+_reference = read_reference()
 _rows = calculate_rows()
 
 
