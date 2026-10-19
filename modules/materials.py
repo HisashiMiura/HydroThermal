@@ -176,7 +176,7 @@ class Materials:
     def load(cls):
 
         #file_name = 'material_prop.csv'
-        file_name = 'material_prop.xlsx'
+        file_name = 'materials_whamcavity.xlsx'
 
         # 絶対 path の取得
         current_dir = os.path.dirname(os.path.abspath(__file__))
