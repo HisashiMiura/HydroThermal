@@ -5,7 +5,13 @@ from dataclasses import dataclass
 import math
 import logging
 from modules import thermo_dynamics
-from modules.material_props import FormulaIsotherm, ConstantVaporConductivity, PowerExpVaporConductivity
+from modules.material_props import (
+    FormulaIsotherm,
+    ConstantVaporConductivity,
+    PowerExpVaporConductivity,
+    NoLiquidDiffusivity,
+    PiecewiseExpPolyDiffusivity,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +46,9 @@ class Material:
 
     # 湿気伝導率の部品
     vapor_conductivity: ConstantVaporConductivity | PowerExpVaporConductivity
+
+    # 液水拡散係数の部品
+    liquid_diffusivity: NoLiquidDiffusivity | PiecewiseExpPolyDiffusivity
 
     @classmethod
     def load(cls, name: str, row: Series):
@@ -117,6 +126,17 @@ class Material:
         else:
             vapor_conductivity = ConstantVaporConductivity(value=moisture_conductivity)
 
+        # 液水拡散係数の部品
+        # 構造用合板1 だけ液水が移動する。旧 Excel に係数の列がないため、
+        # thermo_dynamics.DIFF に直書きされている係数と範囲（含水率 45% を超え 110% 未満）を使う。
+        # 部品の範囲は「下限を超え、上限以下」なので、含水率がちょうど 1.10 のときだけ DIFF と異なる。
+        if name == '構造用合板1':
+            liquid_diffusivity = PiecewiseExpPolyDiffusivity(ranges=(
+                (0.45, 1.10, (-30.91, 4.2967, -0.22017, 0, 0, 0, 0)),
+            ))
+        else:
+            liquid_diffusivity = NoLiquidDiffusivity()
+
         return Material(
             name=name,
             lambda_h=thermal_conductivity,
@@ -126,7 +146,8 @@ class Material:
             psi0=porosity,
             f_u=f_psi,
             isotherm=isotherm,
-            vapor_conductivity=vapor_conductivity
+            vapor_conductivity=vapor_conductivity,
+            liquid_diffusivity=liquid_diffusivity
         )
 
     def get_u(self, rh: float) -> float:

@@ -2,7 +2,13 @@ import pytest
 
 
 from modules.materials import Materials
-from modules.material_props import FormulaIsotherm, ConstantVaporConductivity, PowerExpVaporConductivity
+from modules.material_props import (
+    FormulaIsotherm,
+    ConstantVaporConductivity,
+    PowerExpVaporConductivity,
+    NoLiquidDiffusivity,
+    PiecewiseExpPolyDiffusivity,
+)
 
 
 _materials = Materials()
@@ -50,3 +56,26 @@ def test_vapor_conductivity(name):
 
     for rh in _rhs:
         assert m.vapor_conductivity.lambda_dsh_m(rh * 0.01) == m.get_lambda_dsh_m(rh), f'RH={rh}%'
+
+
+@pytest.mark.parametrize('name', _materials.get_material_name())
+def test_liquid_diffusivity(name):
+    """液水拡散係数の部品が入っていることを確認する。
+
+    構造用合板1 は含水率 0.45 を超え 1.10 以下で 0 より大きく、範囲外で 0。ほかの材料は常に 0。
+    （今の DIFF は呼ばれるとエラーで止まるため、値は比べない。）
+    """
+
+    m = _materials.get_material(name)
+
+    if name == '構造用合板1':
+        assert isinstance(m.liquid_diffusivity, PiecewiseExpPolyDiffusivity)
+        assert m.liquid_diffusivity.d_w(0.3) == 0.0
+        assert m.liquid_diffusivity.d_w(0.45) == 0.0
+        assert m.liquid_diffusivity.d_w(0.6) > 0.0
+        assert m.liquid_diffusivity.d_w(1.10) > 0.0
+        assert m.liquid_diffusivity.d_w(1.5) == 0.0
+    else:
+        assert isinstance(m.liquid_diffusivity, NoLiquidDiffusivity)
+        for u in [0.0, 0.3, 0.6, 1.5]:
+            assert m.liquid_diffusivity.d_w(u) == 0.0, f'u={u}'
