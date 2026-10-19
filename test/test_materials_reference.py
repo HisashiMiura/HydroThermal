@@ -32,8 +32,11 @@ def test_reference_covers_all():
 
 @pytest.mark.parametrize('column', COLUMNS[2:])
 def test_matches_reference(column):
-    """今の Material の計算結果が、基準値と完全に一致することを確認する。"""
+    """今の Material の計算結果が、基準値と一致することを確認する。
+
+    PC や Python のバージョンによって最後の数桁が変わるため、相対誤差 1e-12 まで許す。
+    """
 
     for row in _rows:
         expected = _reference[(row['name'], row['rh'])][column]
-        assert row[column] == expected, f"{row['name']}, RH={row['rh']}%"
+        assert row[column] == pytest.approx(expected, rel=1e-12), f"{row['name']}, RH={row['rh']}%"
