@@ -70,6 +70,49 @@ def test_power_exp_isotherm_at_zero():
     assert isotherm.u(0.0) == 0.0
 
 
+# No.62 ASHRAE Low-density Glassfibre Batt Insulation の平衡含水率の係数（Parameter = 2）
+_glassfibre_isotherm = {'a': 0.027903, 'b': 0.64024, 'c': -1.5875, 'd': 7.1897, 'f': 87, 'g': 0.022224100929699547}
+
+
+def test_power_exp_isotherm_linear_below_x0():
+    """Parameter = 2 の材料でも、x ≤ 0.98 では u = a·x^b·exp(c·(1 − x^d)) を使うことを確認する。
+
+    x = 0.98 ちょうども、この式を使う（直線の式とは最後の桁が違うので見分けられる）。
+    """
+
+    isotherm = PowerExpIsotherm(**_glassfibre_isotherm)
+
+    for x in [0.5, 0.9, 0.98]:
+        expected = 0.027903 * x**0.64024 * math.exp(-1.5875 * (1 - x**7.1897))
+        assert isotherm.u(x) == expected, f'x={x}'
+
+
+def test_power_exp_isotherm_linear_at_saturation():
+    """Parameter = 2 の材料で、相対湿度 100%（x = 1）のとき、含水率が f になることを確認する。"""
+
+    isotherm = PowerExpIsotherm(**_glassfibre_isotherm)
+
+    assert isotherm.u(1.0) == 87
+
+
+def test_power_exp_isotherm_linear_middle():
+    """Parameter = 2 の材料で、x = 0.99 のとき、直線のちょうど真ん中 (f + g) / 2 になることを確認する。
+
+    0.99 − 0.98 がちょうど 0.01 にならず最後の桁がずれるため、pytest.approx で比べる。
+    """
+
+    isotherm = PowerExpIsotherm(**_glassfibre_isotherm)
+
+    assert isotherm.u(0.99) == pytest.approx((87 + 0.022224100929699547) / 2, rel=1e-12)
+
+
+def test_power_exp_isotherm_f_without_g():
+    """f だけを指定したとき、ValueError になることを確認する。"""
+
+    with pytest.raises(ValueError):
+        PowerExpIsotherm(a=0.027903, b=0.64024, c=-1.5875, d=7.1897, f=87)
+
+
 def test_constant_vapor_conductivity():
     """湿気伝導率が一定の部品は、相対湿度によらず与えた値を返すことを確認する。"""
 

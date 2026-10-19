@@ -71,6 +71,11 @@ class FormulaIsotherm:
         return eval(_compile(self.formula), {'math': math}, {'r': x})
 
 
+# Parameter = 2 の材料で、直線に切り替える相対湿度。
+# materials_mews_ashrae.xlsx の「平衡含水率」シートの O1 と同じ値。変えるときは両方直す。
+POWER_EXP_ISOTHERM_X0 = 0.98
+
+
 @dataclass(frozen=True)
 class PowerExpIsotherm:
     """係数で与える平衡含水率曲線（materials_mews_ashrae.xlsx 用）。
@@ -78,6 +83,12 @@ class PowerExpIsotherm:
     u = a · x^b · exp(c · (1 − x^d))    x: 相対湿度(0.0～1.0)
 
     a は相対湿度 100% のときの含水率になる（x = 1 のとき u = a）。
+
+    f・g を指定した材料（Excel の Parameter = 2）は、x > X0（POWER_EXP_ISOTHERM_X0 = 0.98）で
+    点 (X0, g) と点 (1, f) を結ぶ直線を使う。
+        u = (f − g) · (x − X0) / (1 − X0) + g
+    x = X0 ちょうどは、上の式を使う。
+
     式は materials_mews_ashrae.xlsx の「平衡含水率」シートの式に合わせた。
     """
 
@@ -93,6 +104,19 @@ class PowerExpIsotherm:
     # 係数, -
     d: float
 
+    # x > X0 で使う直線の係数（Parameter = 2 の材料だけ）。省略すると直線を使わない。
+    # 相対湿度 100% のときの含水率, kg/kg
+    f: float | None = None
+
+    # 相対湿度 X0 のときの含水率, kg/kg
+    g: float | None = None
+
+    def __post_init__(self):
+
+        # f と g は、両方指定するか、両方省略する
+        if (self.f is None) != (self.g is None):
+            raise ValueError(f'f と g は両方指定してください: f={self.f}, g={self.g}')
+
     def u(self, x: float) -> float:
         """相対湿度から質量含水率を求める。
 
@@ -102,6 +126,12 @@ class PowerExpIsotherm:
         Returns:
             質量含水率, kg/kg
         """
+
+        x0 = POWER_EXP_ISOTHERM_X0
+
+        # Parameter = 2 の材料で、相対湿度が X0 を超えるときは直線
+        if self.f is not None and x > x0:
+            return (self.f - self.g) * (x - x0) / (1 - x0) + self.g
 
         return self.a * x**self.b * math.exp(self.c * (1 - x**self.d))
 
