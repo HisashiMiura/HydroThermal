@@ -18,9 +18,35 @@ _df = pd.read_excel(
 # 式が1本だけの材料の名前
 _single_formula_names = _df.index[_df['n_formula_branches'] == 1].tolist()
 
+# 式を切り替える材料の名前
+_multi_formula_names = _df.index[_df['n_formula_branches'] > 1].tolist()
+
 # 確認する相対湿度, %
 # 0% は、軽量モルタルの式（r**-0.120）が今の実装でも計算できないため含めない。
 _rhs = list(range(1, 100))
+
+# 境目の前後で追加で確認する相対湿度, %
+_rhs_boundary = [88.9, 89.0, 89.1, 89.5, 94.9, 95.0, 95.1, 95.5]
+
+
+def _make_isotherm(row: pd.Series) -> FormulaIsotherm:
+    """Excel の1行から FormulaIsotherm を作る。今の Material.load と同じ順で判定するように並べる。"""
+
+    n = row['n_formula_branches']
+
+    if n == 1:
+        candidates = []
+    elif n == 2:
+        candidates = [(row['threshold2'], row['formula2'])]
+    elif n == 3:
+        candidates = [(row['threshold3'], row['formula3']), (row['threshold2'], row['formula2'])]
+    else:
+        raise ValueError(f'n_formula_branches が不正です: {n}')
+
+    # 境目が空欄の組は選ばれることがないので除く
+    conditional = tuple((float(t), str(f)) for t, f in candidates if not pd.isna(t))
+
+    return FormulaIsotherm(formula=str(row['formula1']), conditional=conditional)
 
 
 @pytest.fixture(scope='module')
@@ -37,3 +63,39 @@ def test_formula_isotherm_single(materials, name):
 
     for rh in _rhs:
         assert isotherm.u(rh * 0.01) == current.get_u(rh), f'RH={rh}%'
+
+
+@pytest.mark.parametrize('name', _multi_formula_names)
+def test_formula_isotherm_multi(materials, name):
+    """式を切り替える材料で、今の Material.get_u と同じ含水率になることを確認する。"""
+
+    current = materials.get_material(name)
+    isotherm = _make_isotherm(_df.loc[name])
+
+    for rh in _rhs + _rhs_boundary:
+        assert isotherm.u(rh * 0.01) == current.get_u(rh), f'RH={rh}%'
+
+
+def test_formula_isotherm_two_formulas():
+    """式2本：境目を超えたら conditional の式、境目ちょうどは基本の式を使う。"""
+
+    isotherm = FormulaIsotherm(formula='1', conditional=((0.5, '2'),))
+
+    assert isotherm.u(0.3) == 1
+    assert isotherm.u(0.5) == 1
+    assert isotherm.u(0.7) == 2
+
+
+def test_formula_isotherm_order():
+    """式3本：conditional は前から順に調べ、最初に当てはまった式を使う。"""
+
+    isotherm = FormulaIsotherm(formula='1', conditional=((0.9, '3'), (0.5, '2')))
+
+    assert isotherm.u(0.3) == 1
+    assert isotherm.u(0.7) == 2
+    assert isotherm.u(0.95) == 3
+
+    # 並べ方を逆にすると、0.9 を超えていても先に 0.5 の判定に当てはまる（シージングと同じ状況）
+    isotherm = FormulaIsotherm(formula='1', conditional=((0.5, '2'), (0.9, '3')))
+
+    assert isotherm.u(0.95) == 2
