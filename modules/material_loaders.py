@@ -5,6 +5,7 @@ Material は、データの与え方を知らない形にしておく。
 """
 
 import logging
+import math
 import os
 
 import pandas as pd
@@ -135,3 +136,34 @@ def _material_from_whamcavity_row(name: str, row: Series) -> Material:
         vapor_conductivity=vapor_conductivity,
         liquid_diffusivity=liquid_diffusivity
     )
+
+
+def _liquid_diffusivity_from_ranges(
+        n_ranges: int,
+        ranges: list[tuple[float, float, tuple[float, float, float, float, float, float, float]]]
+) -> NoLiquidDiffusivity | PiecewiseExpPolyDiffusivity:
+    """新しい Excel（materials_mews_ashrae.xlsx）の「範囲分け数」と区間の値から、液水拡散係数の部品を作る。
+
+    各区間の式は次のとおり（定義は RR-110 の式(5)、Jl = −ρ0·Dw·grad u）。
+        D = exp(a + b·u + c·u^2 + d·u^3 + e·u^4 + f·u^5 + g·u^6)    u: 質量含水率, kg/kg、D: m2/s
+
+    範囲分け数ごとの扱い:
+        0: 液水が移動しない（係数の値は使わない。a に「測っていない」の印 ln(99999) が入っている材料もある）
+        1: 区間1の式を、含水率によらず使う（Excel の範囲は使わない）
+        2 以上: まだ対応していない
+
+    Args:
+        n_ranges: 範囲分け数
+        ranges: 区間1から順に (下限, 上限, 係数 (a, b, c, d, e, f, g)) を並べたもの。下限・上限は質量含水率, kg/kg
+    Returns:
+        液水拡散係数の部品
+    """
+
+    if n_ranges == 0:
+        return NoLiquidDiffusivity()
+
+    if n_ranges == 1:
+        _, _, coefficients = ranges[0]
+        return PiecewiseExpPolyDiffusivity(ranges=((-math.inf, math.inf, tuple(coefficients)),))
+
+    raise NotImplementedError(f'範囲分け数 {n_ranges} にはまだ対応していません')
