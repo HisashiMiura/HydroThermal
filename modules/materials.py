@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import math
 import logging
 from modules import thermo_dynamics
-from modules.material_props import FormulaIsotherm
+from modules.material_props import FormulaIsotherm, ConstantVaporConductivity, PowerExpVaporConductivity
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,9 @@ class Material:
 
     # 平衡含水率の部品
     isotherm: FormulaIsotherm
+
+    # 湿気伝導率の部品
+    vapor_conductivity: ConstantVaporConductivity | PowerExpVaporConductivity
 
     @classmethod
     def load(cls, name: str, row: Series):
@@ -106,6 +109,14 @@ class Material:
 
         isotherm = FormulaIsotherm(formula=formula1, conditional=conditional)
 
+        # 湿気伝導率の部品
+        # 構造用合板1 は、湿度によって変わる式（ASHRAE）を使う。
+        # 旧 Excel に係数の列がないため、今の get_lambda_dsh_m に直書きされている係数を使う。
+        if name == '構造用合板1':
+            vapor_conductivity = PowerExpVaporConductivity(a=1.87E-11, b=2.4019, c=-0.78864, d=1.1471)
+        else:
+            vapor_conductivity = ConstantVaporConductivity(value=moisture_conductivity)
+
         return Material(
             name=name,
             lambda_h=thermal_conductivity,
@@ -114,7 +125,8 @@ class Material:
             rho=density,
             psi0=porosity,
             f_u=f_psi,
-            isotherm=isotherm
+            isotherm=isotherm,
+            vapor_conductivity=vapor_conductivity
         )
 
     def get_u(self, rh: float) -> float:
