@@ -1,7 +1,7 @@
 """materials_mews_ashrae.xlsx の ASHRAE の材料（No.43～80）を、手元の資料で確かめられる範囲で調べる。
 
 出典の RP-1018 最終報告書（材料ごとの測定値の表）は手元にない。そのため次の 3 つだけを調べる。
-    1. Kumaran (2006)（docs/reference/Kumaran2006_ASHRAE_RP1018_NRCC-45692.pdf）の材料一覧・密度との照合
+    1. Kumaran (2006)（入手先は ashrae_excel_derivation.md の 2 章）の材料一覧・密度との照合
     2. Excel の中の整合性・もっともらしさ（平衡含水率の上限、液水拡散係数の区間、同じ値の重なり）
     3. 旧 Excel（materials_whamcavity.xlsx）の構造用合板1 との比較
 

@@ -2,7 +2,7 @@
 
 作成: 2026-10-19（Claude Code による調査）
 対象: `modules/materials_mews_ashrae.xlsx` の「データファイル用」シート、材料名が「MEWS」で始まる No.1〜42
-出典資料: `docs/reference/IRC_report_rr110.pdf`、`docs/reference/homepages.doc`
+出典資料: RR-110、homepages.doc（入手先は 2 章）
 照合スクリプト: `docs/reference/mews_check/`（再現方法は 7 章）
 
 ASHRAE の材料（No.43〜80）は、出典の報告書（RP-1018）が手元にないため、別の資料で扱う。
