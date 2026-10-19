@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 
 from modules.room import Room, InputRoom
@@ -12,6 +14,13 @@ from modules.input_data import InputRoom
 from modules import wood_decay
 from modules.input_wall import InputWall
 
+# ログの出力設定（INFO 以上を画面に表示）
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+)
+
+logger = logging.getLogger(__name__)
 
 ipt_room = InputRoom.read(d={})
 room = Room.init(ipt_room=ipt_room, n_div=NDVD)

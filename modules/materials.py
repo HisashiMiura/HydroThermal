@@ -3,7 +3,11 @@ from pandas import Series
 import os
 from dataclasses import dataclass
 import math
+import logging
 from modules import thermo_dynamics
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -191,7 +195,11 @@ class Materials:
             raise ValueError(f"{file_name} の 'name' 列に重複があります: {duplicates}")
 
         # 1行ずつ取り出してデータクラスに格納
-        return [Material.load(name=name, row=row) for name, row in df.iterrows()]
+        ms = [Material.load(name=name, row=row) for name, row in df.iterrows()]
+
+        logger.info('材料物性データの読み込みに成功しました: %s（%d件）', file_name, len(ms))
+
+        return ms
     
 
 
