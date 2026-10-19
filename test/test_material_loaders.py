@@ -210,8 +210,31 @@ def test_liquid_diffusivity_from_ranges_above_last_log(caplog):
     assert 'ASHRAE Fibreboard' in messages[0]
 
 
-def test_liquid_diffusivity_from_ranges_not_implemented():
-    """範囲分け数 4 のとき、まだ対応していないので NotImplementedError になることを確認する。"""
 
-    with pytest.raises(NotImplementedError):
-        _liquid_diffusivity_from_ranges(4, _RANGES_NO1)
+# No.27 MEWS Fibreboard I - Paper Facer の値（範囲分け数 4。値は3区間分しかない）
+_RANGES_NO27 = [
+    (None, 0.11, (-19.890356714011308, 0, 0, 0, 0, 0, 0)),
+    (0.11, 0.32, (5.6968, -677.38, 6968.5, -35046, 85320, -79720, 0)),
+    (0.32, 0.53, (124.47, -1250, 4080.2, -5961, 3265.1, 0, 0)),
+]
+
+def test_liquid_diffusivity_from_ranges_4(caplog):
+    """範囲分け数 4 のとき、3 として読み、ログ（WARNING）が出ることを確認する（No.27 の値）。"""
+
+    with caplog.at_level(logging.WARNING, logger='modules.material_loaders'):
+        d4 = _liquid_diffusivity_from_ranges(4, _RANGES_NO27, name='MEWS Fibreboard I - Paper Facer')
+
+    d3 = _liquid_diffusivity_from_ranges(3, _RANGES_NO27)
+
+    assert d4 == d3
+    assert 'MEWS Fibreboard I - Paper Facer' in caplog.text
+    # 区間3の上限 0.53 を超えたら、0.53 での値で一定
+    assert d4.d_w(0.6) == pytest.approx(_exp_poly(_RANGES_NO27[2][2], 0.53), rel=1e-12)
+
+
+@pytest.mark.parametrize('n_ranges', [-1, 5])
+def test_liquid_diffusivity_from_ranges_invalid(n_ranges):
+    """範囲分け数が 0〜4 でないとき、ValueError になることを確認する。"""
+
+    with pytest.raises(ValueError, match='範囲分け数'):
+        _liquid_diffusivity_from_ranges(n_ranges, _RANGES_NO1)
