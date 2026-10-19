@@ -5,7 +5,7 @@ import pytest
 
 
 from modules.materials import Materials
-from modules.material_props import FormulaIsotherm
+from modules.material_props import FormulaIsotherm, ConstantVaporConductivity
 
 
 # materials_whamcavity.xlsx の内容
@@ -20,6 +20,9 @@ _single_formula_names = _df.index[_df['n_formula_branches'] == 1].tolist()
 
 # 式を切り替える材料の名前
 _multi_formula_names = _df.index[_df['n_formula_branches'] > 1].tolist()
+
+# 湿気伝導率が一定の材料の名前（構造用合板1 は今の実装で湿度依存の式を使っている）
+_constant_vapor_names = [name for name in _df.index if name != '構造用合板1']
 
 # 確認する相対湿度, %
 # 0% は、軽量モルタルの式（r**-0.120）が今の実装でも計算できないため含めない。
@@ -99,3 +102,14 @@ def test_formula_isotherm_order():
     isotherm = FormulaIsotherm(formula='1', conditional=((0.5, '2'), (0.9, '3')))
 
     assert isotherm.u(0.95) == 2
+
+
+@pytest.mark.parametrize('name', _constant_vapor_names)
+def test_constant_vapor_conductivity(materials, name):
+    """湿気伝導率が一定の材料で、今の Material.get_lambda_dsh_m と同じ値になることを確認する。"""
+
+    current = materials.get_material(name)
+    conductivity = ConstantVaporConductivity(value=_df.loc[name, 'moisture_conductivity(kg/msPa)'])
+
+    for rh in _rhs:
+        assert conductivity.lambda_dsh_m(rh * 0.01) == current.get_lambda_dsh_m(rh), f'RH={rh}%'

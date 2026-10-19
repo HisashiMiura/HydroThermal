@@ -69,3 +69,23 @@ class FormulaIsotherm:
                 return eval(_compile(formula), {'math': math}, {'r': x})
 
         return eval(_compile(self.formula), {'math': math}, {'r': x})
+
+
+@dataclass(frozen=True)
+class ConstantVaporConductivity:
+    """相対湿度によらず一定の湿気伝導率。"""
+
+    # 湿気伝導率, (kg/s)/(m Pa)
+    value: float
+
+    def lambda_dsh_m(self, x: float) -> float:
+        """湿気伝導率を求める。
+
+        Args:
+            x: 相対湿度(0.0～1.0)（一定値なので使わない）
+
+        Returns:
+            湿気伝導率, (kg/s)/(m Pa)
+        """
+
+        return self.value
