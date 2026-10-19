@@ -140,7 +140,8 @@ def _material_from_whamcavity_row(name: str, row: Series) -> Material:
 
 def _liquid_diffusivity_from_ranges(
         n_ranges: int,
-        ranges: list[tuple[float, float, tuple[float, float, float, float, float, float, float]]]
+        ranges: list[tuple[float, float, tuple[float, float, float, float, float, float, float]]],
+        name: str = ''
 ) -> NoLiquidDiffusivity | PiecewiseExpPolyDiffusivity:
     """新しい Excel（materials_mews_ashrae.xlsx）の「範囲分け数」と区間の値から、液水拡散係数の部品を作る。
 
@@ -151,12 +152,24 @@ def _liquid_diffusivity_from_ranges(
         0: 液水が移動しない（係数の値は使わない。a に「測っていない」の印 ln(99999) が入っている材料もある）
         1: 区間1の式を、含水率によらず使う（Excel の範囲は使わない）
         2・3: 区間1から範囲分け数の区間までを使う。区間1の下限は Excel に値がないので −∞ とする。
-              区間と区間のすき間、最後の区間の上限を超える含水率では 0 になる（部品の決まり。扱いは 2-2-3 で決める）
+              最後の区間の上限を超える含水率では 0 になる（部品の決まり。扱いは 2-2-3 で決める）
         4 以上: まだ対応していない
+
+    区間と区間のすき間の埋め方（2026-10-20 に決定）:
+        Excel では、前の区間の上限と次の区間の下限が違う（すき間がある）材料がある。
+        （No.49・62・66・67・68・76・77・78・80 の 9 材料。すべて ASHRAE で、区間1 は 10^-16（実質 0）の定数）
+        すき間の含水率ではどの区間の式も当てはまらないので、前の区間の上限を次の区間の下限まで延ばして埋める。
+        例: No.76 Gypsum は 区間1「〜0.13」・区間2「0.15〜0.57」→ 区間1を「〜0.15」とする。
+        理由:
+            - ASHRAE の材料は、測った範囲（区間2）より下をすべて 10^-16 としている。すき間も測った範囲より下なので同じ扱いにする。
+            - 次の区間を下に延ばすと、測った範囲の外で多項式を使い、測っていない液水移動を作ってしまう。
+        埋めたときは、材料名と値をログ（INFO）に出す。Excel の値は変えない。
+        区間が重なっている（前の区間の上限が次の区間の下限より大きい）ときは、Excel の誤りとして ValueError にする。
 
     Args:
         n_ranges: 範囲分け数
         ranges: 区間1から順に (下限, 上限, 係数 (a, b, c, d, e, f, g)) を並べたもの。下限・上限は質量含水率, kg/kg
+        name: 材料の名前（ログとエラーのメッセージに使う）
     Returns:
         液水拡散係数の部品
     """
@@ -170,8 +183,20 @@ def _liquid_diffusivity_from_ranges(
 
     if n_ranges in (2, 3):
         _, upper1, coefficients1 = ranges[0]
-        first = (-math.inf, upper1, tuple(coefficients1))
-        others = tuple((lower, upper, tuple(coefficients)) for lower, upper, coefficients in ranges[1:n_ranges])
-        return PiecewiseExpPolyDiffusivity(ranges=(first,) + others)
+        used = [(-math.inf, upper1, tuple(coefficients1))]
+        used += [(lower, upper, tuple(coefficients)) for lower, upper, coefficients in ranges[1:n_ranges]]
+
+        # 区間と区間のすき間を、前の区間の上限を次の区間の下限まで延ばして埋める
+        for i in range(n_ranges - 1):
+            lower, upper, coefficients = used[i]
+            next_lower = used[i + 1][0]
+            if upper > next_lower:
+                raise ValueError(f'{name}: 液水拡散係数の区間{i + 1}（上限 {upper}）と区間{i + 2}（下限 {next_lower}）が重なっています')
+            if upper < next_lower:
+                logger.info('%s: 液水拡散係数の区間%dと区間%dのすき間（%s〜%s）を、区間%dを延ばして埋めました',
+                            name, i + 1, i + 2, upper, next_lower, i + 1)
+                used[i] = (lower, next_lower, coefficients)
+
+        return PiecewiseExpPolyDiffusivity(ranges=tuple(used))
 
     raise NotImplementedError(f'範囲分け数 {n_ranges} にはまだ対応していません')

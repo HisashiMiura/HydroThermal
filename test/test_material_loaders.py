@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 
@@ -124,6 +125,51 @@ def test_liquid_diffusivity_from_ranges_2_ignores_range3():
     d = _liquid_diffusivity_from_ranges(2, _RANGES_NO2)
 
     assert len(d.ranges) == 2
+
+
+
+# No.76 ASHRAE Gypsum の値（範囲分け数 2）。区間1の上限 0.13 と区間2の下限 0.15 の間にすき間がある
+_RANGES_NO76 = [
+    (None, 0.13, (-36.841361487904734, 0, 0, 0, 0, 0, 0)),
+    (0.15, 0.57, (-30.444, 11.259, 5.7655, -5.3673, 0, 0, 0)),
+    (0, 0, (0, 0, 0, 0, 0, 0, 0)),
+]
+
+
+@pytest.mark.parametrize('u, i', [
+    (0.12, 0),
+    (0.13, 0),   # Excel の区間1の上限
+    (0.14, 0),   # すき間の中は、延ばした区間1
+    (0.15, 0),   # 延ばした区間1の上限（境目ちょうどは下側の区間）
+    (0.16, 1),
+])
+def test_liquid_diffusivity_from_ranges_gap(u, i):
+    """区間と区間のすき間を、前の区間を延ばして埋めることを確認する（No.76 の値）。"""
+
+    d = _liquid_diffusivity_from_ranges(2, _RANGES_NO76)
+
+    assert d.d_w(u) == pytest.approx(_exp_poly(_RANGES_NO76[i][2], u), rel=1e-12)
+
+
+def test_liquid_diffusivity_from_ranges_gap_log(caplog):
+    """すき間を埋めたとき、材料名と値がログに出ることを確認する。すき間がなければ出ない。"""
+
+    with caplog.at_level(logging.INFO, logger='modules.material_loaders'):
+        _liquid_diffusivity_from_ranges(2, _RANGES_NO76, name='ASHRAE Gypsum')
+        _liquid_diffusivity_from_ranges(3, _RANGES_NO1, name='MEWS Aerated Concrete')
+
+    assert len(caplog.records) == 1
+    assert 'ASHRAE Gypsum' in caplog.text
+    assert '0.13〜0.15' in caplog.text
+
+
+def test_liquid_diffusivity_from_ranges_overlap():
+    """区間が重なっているとき、ValueError になることを確認する。"""
+
+    ranges = [(None, 0.2, (-20, 0, 0, 0, 0, 0, 0)), (0.1, 0.5, (-18, 0, 0, 0, 0, 0, 0))]
+
+    with pytest.raises(ValueError, match='重なって'):
+        _liquid_diffusivity_from_ranges(2, ranges)
 
 
 def test_liquid_diffusivity_from_ranges_not_implemented():
