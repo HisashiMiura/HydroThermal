@@ -169,7 +169,7 @@ class Materials:
         self.ms: list[Material] = self.load()
     
     @classmethod
-    def load(self):
+    def load(cls):
 
         #file_name = 'material_prop.csv'
         file_name = 'material_prop.xlsx'
@@ -178,24 +178,17 @@ class Materials:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         path_and_filename = os.path.join(current_dir, file_name)
 
-        try:
+        if not os.path.isfile(path_and_filename):
+            raise FileNotFoundError(f'材料物性ファイルが見つかりません: {path_and_filename}')
 
-            if not os.path.isfile(path_and_filename):
-                raise FileExistsError('The file does not exist.')
-            
-            #df = pd.read_csv(path_and_filename, skipinitialspace=True, index_col='name')
-            df = pd.read_excel(path_and_filename, sheet_name='material_prop', index_col='name')
+        #df = pd.read_csv(path_and_filename, skipinitialspace=True, index_col='name')
+        df = pd.read_excel(path_and_filename, sheet_name='material_prop', index_col='name')
 
-            # インデックス（name）に重複がないかチェック
-            if not df.index.is_unique:
-                # 重複している名前を特定してエラーメッセージに入れる
-                duplicates = df.index[df.index.duplicated()].unique().tolist()
-                raise ValueError(f"CSVの 'name' 列に重複があります: {duplicates}")
-
-        except ValueError as e:
-            print(f"エラーが発生しました: {e}")
-        
-        print("データの読み込みに成功しました。")
+        # インデックス（name）に重複がないかチェック
+        if not df.index.is_unique:
+            # 重複している名前を特定してエラーメッセージに入れる
+            duplicates = df.index[df.index.duplicated()].unique().tolist()
+            raise ValueError(f"{file_name} の 'name' 列に重複があります: {duplicates}")
 
         # 1行ずつ取り出してデータクラスに格納
         return [Material.load(name=name, row=row) for name, row in df.iterrows()]
