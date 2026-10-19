@@ -140,3 +140,36 @@ class NoLiquidDiffusivity:
         """
 
         return 0.0
+
+
+@dataclass(frozen=True)
+class PiecewiseExpPolyDiffusivity:
+    """含水率によって変わる液水拡散係数。
+
+    D = exp(a + b·u + c·u^2 + d·u^3 + e·u^4 + f·u^5 + g·u^6)    u: 質量含水率, kg/kg
+
+    例: D = exp(-30.91 + 4.2967·u - 0.22017·u^2) の場合
+        PiecewiseExpPolyDiffusivity(coefficients=(-30.91, 4.2967, -0.22017, 0, 0, 0, 0))
+    """
+
+    # 係数 (a, b, c, d, e, f, g)。使わない次数は 0 とする。
+    coefficients: tuple[float, float, float, float, float, float, float]
+
+    def __post_init__(self):
+
+        if len(self.coefficients) != 7:
+            raise ValueError(f'係数は a～g の7個を指定してください: {self.coefficients}')
+
+    def d_w(self, u: float) -> float:
+        """液水拡散係数を求める。
+
+        Args:
+            u: 質量含水率, kg/kg
+
+        Returns:
+            液水拡散係数, m2/s
+        """
+
+        a, b, c, d, e, f, g = self.coefficients
+
+        return math.exp(a + b * u + c * u**2 + d * u**3 + e * u**4 + f * u**5 + g * u**6)

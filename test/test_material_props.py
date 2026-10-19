@@ -1,3 +1,4 @@
+import math
 import os
 
 import openpyxl
@@ -6,7 +7,13 @@ import pytest
 
 
 from modules.materials import Materials
-from modules.material_props import FormulaIsotherm, ConstantVaporConductivity, PowerExpVaporConductivity, NoLiquidDiffusivity
+from modules.material_props import (
+    FormulaIsotherm,
+    ConstantVaporConductivity,
+    PowerExpVaporConductivity,
+    NoLiquidDiffusivity,
+    PiecewiseExpPolyDiffusivity,
+)
 
 
 # materials_whamcavity.xlsx の内容
@@ -195,3 +202,36 @@ def test_no_liquid_diffusivity():
 
     for u in [0.0, 0.1, 0.5, 1.0, 2.0]:
         assert diffusivity.d_w(u) == 0.0, f'u={u}'
+
+
+def test_piecewise_exp_poly_diffusivity_diff():
+    """今の DIFF（thermo_dynamics.py）の中で計算している拡散係数と同じ値になることを確認する。"""
+
+    diffusivity = PiecewiseExpPolyDiffusivity(coefficients=(-30.91, 4.2967, -0.22017, 0, 0, 0, 0))
+
+    # 0.00, 0.05, ..., 2.00
+    for i in range(41):
+        d1 = i * 0.05
+        assert diffusivity.d_w(d1) == math.exp(-30.91 + 4.2967 * d1 - 0.22017 * (d1**2)), f'u={d1}'
+
+
+def test_piecewise_exp_poly_diffusivity_all_terms():
+    """a～g のすべての項が計算に使われることを確認する。"""
+
+    diffusivity = PiecewiseExpPolyDiffusivity(coefficients=(1, 2, 3, 4, 5, 6, 7))
+
+    # u = 0 のときは exp(a)
+    assert diffusivity.d_w(0.0) == pytest.approx(math.exp(1))
+
+    # u = 1 のときは exp(a + b + c + d + e + f + g)
+    assert diffusivity.d_w(1.0) == pytest.approx(math.exp(28))
+
+    # u = 0.5 のときは exp(1 + 2×0.5 + 3×0.5^2 + ... + 7×0.5^6)
+    assert diffusivity.d_w(0.5) == pytest.approx(math.exp(sum((i + 1) * 0.5**i for i in range(7))))
+
+
+def test_piecewise_exp_poly_diffusivity_wrong_length():
+    """係数が7個でないときはエラーになることを確認する。"""
+
+    with pytest.raises(ValueError):
+        PiecewiseExpPolyDiffusivity(coefficients=(-30.91, 4.2967, -0.22017))
