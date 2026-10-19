@@ -6,6 +6,7 @@ import pytest
 
 
 from modules.material_props import (
+    POWER_EXP_ISOTHERM_X0,
     FormulaIsotherm,
     PowerExpIsotherm,
     ConstantVaporConductivity,
@@ -180,6 +181,67 @@ def test_power_exp_vapor_conductivity_mews_ashrae(no):
 
         # Excel と Python で計算の最後の桁がずれることがあるので、相対誤差 1e-9 で判定する。
         assert conductivity.lambda_dsh_m(x) == pytest.approx(expected, rel=1e-9, abs=0), f'x={x}'
+
+
+def _read_mews_ashrae_isotherm():
+    """materials_mews_ashrae.xlsx から平衡含水率の係数と、Excel が計算した値を読む。
+
+    係数はプログラムと同じく「データファイル用」シートから読み、正解値だけを「平衡含水率」シートから読む。
+
+    Returns:
+        係数の辞書 {No: (Parameter, a, b, c, d, f, g)}、
+        相対湿度のリスト（0.0～1.0）、
+        Excel が計算した値の辞書 {No: [各相対湿度での値]}
+    """
+
+    # 「データファイル用」シート：A列 No、K列 Parameter、L～Q列 係数 a～d, f, g（3行目から）
+    ws = _wb_mews_ashrae['データファイル用']
+    coefficients = {
+        ws.cell(row, 1).value: tuple(ws.cell(row, col).value for col in range(11, 18))
+        for row in range(3, ws.max_row + 1)
+        if ws.cell(row, 1).value is not None
+    }
+
+    # 「平衡含水率」シート：2行目 相対湿度（M列から）、3行目から A列 No と M列以降 計算値
+    # 84行目より下はグラフ表示用の別の表なので、No が数値の行だけを読む。
+    ws = _wb_mews_ashrae['平衡含水率']
+    xs = [ws.cell(2, col).value for col in range(13, ws.max_column + 1)]
+    expected = {}
+    for row in range(3, ws.max_row + 1):
+        no = ws.cell(row, 1).value
+        if not isinstance(no, int):
+            break
+        expected[no] = [ws.cell(row, col).value for col in range(13, ws.max_column + 1)]
+
+    return coefficients, xs, expected
+
+
+_isotherm_coefficients, _isotherm_xs, _isotherm_expected = _read_mews_ashrae_isotherm()
+
+
+@pytest.mark.parametrize('no', list(_isotherm_expected.keys()))
+def test_power_exp_isotherm_mews_ashrae(no):
+    """新しい Excel の材料で、Excel が計算した平衡含水率と同じ値になることを確認する。"""
+
+    parameter, a, b, c, d, f, g = _isotherm_coefficients[no]
+
+    if parameter == 1:
+        isotherm = PowerExpIsotherm(a=a, b=b, c=c, d=d)
+    elif parameter == 2:
+        isotherm = PowerExpIsotherm(a=a, b=b, c=c, d=d, f=f, g=g)
+    else:
+        raise ValueError(f'No.{no}: Parameter が不正です: {parameter}')
+
+    for x, expected in zip(_isotherm_xs, _isotherm_expected[no]):
+
+        # Excel と Python で計算の最後の桁がずれることがあるので、相対誤差 1e-9 で判定する。
+        assert isotherm.u(x) == pytest.approx(expected, rel=1e-9, abs=0), f'x={x}'
+
+
+def test_power_exp_isotherm_x0_matches_excel():
+    """直線に切り替える相対湿度が、Excel の「平衡含水率」シートの O1 と同じであることを確認する。"""
+
+    assert POWER_EXP_ISOTHERM_X0 == _wb_mews_ashrae['平衡含水率']['O1'].value
 
 
 def test_no_liquid_diffusivity():
