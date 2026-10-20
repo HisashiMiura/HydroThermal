@@ -207,13 +207,13 @@ class Wall:
 
     def _c_vap_wp_i_mns(self, i: int, state: State, state_mns: State) -> float:
         """水分化学ポテンシャル差を駆動力とする水蒸気移動に関する係数（室外側）, (kg/(s m2))/(J/kg)"""
-        # RMDG: 湿気伝導率, kg/(m s Pa)
-        # dgdu: 水分化学ポテンシャルに対する水蒸気圧の微分, Pa / (J/kg)
-        return 1 / (self.cells_is[i-1].r_h_pls / self.dpv_dmu(state=state_mns) + self.cells_is[i].r_h_mns / self.dpv_dmu(state=state))
+        # r_m：透湿抵抗, (m2 s Pa)/kg（Fortran の ADWGX = 湿気伝導率 × DGDU / DX に当たる）
+        # dpv_dmu：水分化学ポテンシャルに対する水蒸気圧の微分, Pa / (J/kg)
+        return 1 / (self.cells_is[i-1].r_m_pls(state=state_mns) / self.dpv_dmu(state=state_mns) + self.cells_is[i].r_m_mns(state=state) / self.dpv_dmu(state=state))
     
     def _c_vap_wp_i_pls(self, i: int, state: State, state_pls: State) -> float:
         """水分化学ポテンシャル差を駆動力とする水蒸気移動に関する係数（室内側）, (kg/(s m2))/(J/kg)"""
-        return 1 / (self.cells_is[i+1].r_h_mns / self.dpv_dmu(state=state_pls) + self.cells_is[i].r_h_pls / self.dpv_dmu(state=state))
+        return 1 / (self.cells_is[i+1].r_m_mns(state=state_pls) / self.dpv_dmu(state=state_pls) + self.cells_is[i].r_m_pls(state=state) / self.dpv_dmu(state=state))
     
     def _c_liq_wp_i_mns(self, i: int, state: State, state_mns: State) -> float:
         """水分化学ポテンシャル差を駆動力とする液水移動に関する係数（室外側）, (kg/(s m2))/(J/kg)"""
