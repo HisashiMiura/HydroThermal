@@ -620,7 +620,7 @@ def plot_one_diffusivity(target, others=(), refs=(), file_name=None, kunzel=None
     """液水拡散係数と含水率（対数目盛り）。検証する材料の RH 80・95・99% の含水率に縦の点線を引く。
 
     Args:
-        kunzel: 厚さ方向の目安を描くときの (吸水係数の下限, 上限, 吸水係数の出典)。Künzel の式で、含水率 0〜wf の範囲に描く
+        kunzel: 厚さ方向の目安を描くときの (吸水係数の下限, 上限, 吸水係数の出典[, wf kg/m3])。Künzel の式で、含水率 0〜wf の範囲に描く
     """
     ms = _materials_by_key()
     fig, ax = plt.subplots(figsize=ONE_FIGSIZE, layout='constrained')
@@ -640,8 +640,9 @@ def plot_one_diffusivity(target, others=(), refs=(), file_name=None, kunzel=None
             ax.axhline(r['value'], color=INK, linewidth=1, linestyle=':', zorder=1,
                        label=f"{r['doc']} p{r['page']} {r['material']}（{r['note']}）")
     if kunzel:
-        a_lo, a_hi, source = kunzel
-        w_f = kunzel_w_f(m)
+        a_lo, a_hi, source = kunzel[:3]
+        # wf を与えたとき（4 番目）はその値、ないときは材料の平衡含水率の RH 99.8% の値
+        w_f = kunzel[3] if len(kunzel) > 3 else kunzel_w_f(m)
         us_k = np.linspace(0.0, w_f / m.rho, 200)
         lo = [kunzel_dws(u * m.rho, a_lo, w_f) for u in us_k]
         hi = [kunzel_dws(u * m.rho, a_hi, w_f) for u in us_k]
