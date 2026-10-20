@@ -315,13 +315,26 @@ def read_refs(file_name: str) -> list[dict]:
     return rows
 
 
+def _ref_label(r: dict) -> str:
+    """文献の点の系列の名前。文献・ページ・材料と、出典の番号 [n]（注記または表の名前から）、吸湿・放湿の別。"""
+    import re
+    tags = re.findall(r'\[\d+\]', r['note']) or re.findall(r'\[\d+\]', r['table'])
+    side = r['note'] if r['note'] in ('吸湿', '放湿') else ''
+    label = f"{r['doc']} p{r['page']} {r['material']}"
+    if tags:
+        label += ' ' + tags[0]
+    if side:
+        label += f'（{side}）'
+    return label
+
+
 def _ref_series(refs: list[dict], prop: str) -> dict:
-    """文献の値を、(文献, 表, 材料, 注記) ごとの点の並びにまとめる。{ラベル: (xs, ys)}"""
+    """文献の値を、系列（_ref_label）ごとの点の並びにまとめる。{ラベル: (xs, ys)}"""
     series = {}
     for r in refs:
         if r['property'] != prop:
             continue
-        label = f"{r['doc']} p{r['page']} {r['material']}" + (f"（{r['note']}）" if r['note'] else '')
+        label = _ref_label(r)
         xs, ys = series.setdefault(label, ([], []))
         xs.append(r['x'])
         ys.append(r['value'])
@@ -383,7 +396,10 @@ def plot_moisture(materials: list[tuple[str, str]], refs: list[dict] = (), title
     ax_vap.annotate('静止空気（μ = 1）', xy=(rhs[0], delta_air()), xytext=(2, 3), textcoords='offset points',
                     color=INK_SECONDARY, fontsize=8)
 
-    ax_u.set(xlabel='相対湿度, %', ylabel='平衡含水率, kg/kg', title='平衡含水率', xlim=(rh_min, 100))
+    # 縦軸は RH 98% までの値と文献の値が見える範囲にする（RH 100% 近くで急に大きくなる材料で、ほかが潰れないように）
+    u_top = max([_safe(ms[key].get_u, 98.0) for key in materials] + [r['value'] for r in refs if r['property'] == 'u'])
+    ax_u.set(xlabel='相対湿度, %', ylabel='平衡含水率, kg/kg', title='平衡含水率（縦軸は RH 98% までが入る範囲）',
+             xlim=(rh_min, 100), ylim=(0, u_top * 1.3))
     ax_vap.set(xlabel='相対湿度, %', ylabel='湿気伝導率, (kg/s)/(m Pa)', title='湿気伝導率', xlim=(rh_min, 100),
                yscale='log')
     ax_liq.set(xlabel='相対湿度, %', ylabel='液水伝導率, (kg/s)/(m (J/kg))', title='液水伝導率（20 ℃）',
