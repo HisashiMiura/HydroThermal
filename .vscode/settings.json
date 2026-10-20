@@ -10,7 +10,10 @@
         "."
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "python.testing.pytestEnabled": true,
+
+    // 文献の非公開リポジトリ（docs/reference/papers/、3 階層下）も「ソース管理」に表示する
+    "git.repositoryScanMaxDepth": 3
 }
 
 
