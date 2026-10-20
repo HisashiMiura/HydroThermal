@@ -181,6 +181,21 @@ class CellMaterial(Cell):
         """水分伝導抵抗（＋）, (m2 (J/kg))/(kg/s)"""
         pass
 
+    def _r_liq_wp(self, x: float, state: State) -> float:
+        """幅 x の材料の水分伝導抵抗（液水）, (m2 (J/kg))/(kg/s)
+
+        液水伝導率が 0（液水が移動しない材料、または液水拡散係数の範囲の外）のときは、0 で割らずに無限大とする。
+        wall.py の係数 1 / (抵抗 + 抵抗) は、片方が無限大なら 0（液水が移動しない）になる。
+
+        Args:
+            x: 幅, m
+            state: 状態
+        """
+
+        lambda_dsh_mu_l = self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+
+        return float('inf') if lambda_dsh_mu_l == 0.0 else x / lambda_dsh_mu_l
+
     def v_air(self, t: float, rho_o: float) -> float:
         """通気層内の風量を求める。
         Args:
@@ -221,7 +236,7 @@ class CellOutsideSurface(CellMaterial):
 
     def r_liq_wp_pls(self, state: State) -> float:
         """水分伝導抵抗（＋）, (m2 (J/kg))/(kg/s)"""
-        return self.x / self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+        return self._r_liq_wp(x=self.x, state=state)
 
 
 @dataclass
@@ -248,7 +263,7 @@ class CellInsideSurface(CellMaterial):
 
     def r_liq_wp_mns(self, state: State) -> float:
         """水分伝導抵抗（－）, (m2 (J/kg))/(kg/s)"""
-        return self.x / self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+        return self._r_liq_wp(x=self.x, state=state)
 
     def r_liq_wp_pls(self, state: State) -> float:
         """水分伝導抵抗（＋）, (m2 (J/kg))/(kg/s)"""
@@ -290,7 +305,7 @@ class CellOutsideEndPoint(CellMaterial):
 
     def r_liq_wp_pls(self, state: State) -> float:
         """水分伝導抵抗（＋）, (m2 (J/kg))/(kg/s)"""
-        return self.x / self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+        return self._r_liq_wp(x=self.x, state=state)
 
 
 # 室内側端点（空気層に面しない・室内に面しない）
@@ -324,7 +339,7 @@ class CellInsideEndPoint(CellMaterial):
 
     def r_liq_wp_mns(self, state: State) -> float:
         """水分伝導抵抗（－）, (m2 (J/kg))/(kg/s)"""
-        return self.x / self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+        return self._r_liq_wp(x=self.x, state=state)
 
     def r_liq_wp_pls(self, state: State) -> float:
         """水分伝導抵抗（＋）, (m2 (J/kg))/(kg/s)"""
@@ -365,7 +380,7 @@ class CellOutsideEndPointAirLayer(CellMaterial):
 
     def r_liq_wp_pls(self, state: State) -> float:
         """水分伝導抵抗（＋）, (m2 (J/kg))/(kg/s)"""
-        return self.x / self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+        return self._r_liq_wp(x=self.x, state=state)
     
     def get_x(self, v_mod: float, angle: float, rf: float):
 
@@ -403,7 +418,7 @@ class CellInsideEndPointAirLayer(CellMaterial):
 
     def r_liq_wp_mns(self, state: State) -> float:
         """水分伝導抵抗（－）, (m2 (J/kg))/(kg/s)"""
-        return self.x / self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+        return self._r_liq_wp(x=self.x, state=state)
 
     def r_liq_wp_pls(self, state: State) -> float:
         """水分伝導抵抗（＋）, (m2 (J/kg))/(kg/s)"""
@@ -439,9 +454,9 @@ class CellInterior(CellMaterial):
 
     def r_liq_wp_mns(self, state: State) -> float:
         """水分伝導抵抗（－）, (m2 (J/kg))/(kg/s)"""
-        return self.x / self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+        return self._r_liq_wp(x=self.x, state=state)
 
     def r_liq_wp_pls(self, state: State) -> float:
         """水分伝導抵抗（＋）, (m2 (J/kg))/(kg/s)"""
-        return self.x / self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+        return self._r_liq_wp(x=self.x, state=state)
 

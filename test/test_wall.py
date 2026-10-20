@@ -68,3 +68,23 @@ def test_c_vap_wp_order_of_magnitude():
     c = wall._c_vap_wp_i_mns(i=1, state=_states[1], state_mns=_states[0])
 
     assert c < 1e-9
+
+
+def test_c_liq_wp_no_liquid():
+    """液水が移動しない材料（グラスウール1）の間では、液水の係数が 0 になる（0 で割るエラーにならない）ことを確認する。"""
+
+    glass_wool = _whamcavity.get_material('グラスウール1')
+    wall = _wall_with_cells([CellInterior(x=0.01, material=glass_wool) for _ in range(3)])
+
+    assert wall._c_liq_wp_i_mns(i=1, state=_states[1], state_mns=_states[0]) == 0.0
+    assert wall._c_liq_wp_i_pls(i=1, state=_states[1], state_pls=_states[2]) == 0.0
+
+
+def test_c_liq_wp_one_side_no_liquid():
+    """片側だけ液水が移動しない（構造用合板1 の RH 99% と グラスウール1）とき、液水の係数が 0 になることを確認する。"""
+
+    glass_wool = _whamcavity.get_material('グラスウール1')
+    wall = _wall_with_cells([CellInterior(x=0.01, material=glass_wool), CellInterior(x=0.01, material=_plywood1)])
+    state_99 = State.init(t=293.15, rh=99.0)
+
+    assert wall._c_liq_wp_i_mns(i=1, state=state_99, state_mns=_states[1]) == 0.0

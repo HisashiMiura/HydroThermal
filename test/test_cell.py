@@ -131,3 +131,48 @@ def test_interior_r_m_mews_ashrae(rh):
     state = _state(rh)
 
     assert cell.r_m_pls(state=state) == pytest.approx(_X / m.vapor_conductivity.lambda_dsh_m(state.rh * 0.01) / 2, rel=1e-12)
+
+
+def test_r_liq_wp_no_liquid():
+    """液水が移動しない材料（グラスウール1）では、液水の抵抗が 0 で割らずに無限大になることを確認する。"""
+
+    cell = CellInterior(x=_X, material=_whamcavity.get_material('グラスウール1'))
+    state = _state(60.0)
+
+    assert cell.r_liq_wp_mns(state=state) == float('inf')
+    assert cell.r_liq_wp_pls(state=state) == float('inf')
+
+
+def test_r_liq_wp_plywood1():
+    """構造用合板1 では、液水拡散係数の範囲の外（RH 60%）で無限大、範囲の中（RH 99%）で「幅 ÷ 液水伝導率」になることを確認する。"""
+
+    m = _whamcavity.get_material('構造用合板1')
+    cell = CellInterior(x=_X, material=m)
+
+    assert cell.r_liq_wp_pls(state=_state(60.0)) == float('inf')
+
+    state = _state(99.0)
+    expected = _X / m.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+    assert 0.0 < expected < float('inf')
+    assert cell.r_liq_wp_mns(state=state) == expected
+    assert cell.r_liq_wp_pls(state=state) == expected
+
+
+def test_r_liq_wp_surface_and_end_point_no_liquid():
+    """表面・端のセルでも、液水が移動しない材料なら材料側の液水の抵抗が無限大になることを確認する。"""
+
+    m = _whamcavity.get_material('グラスウール1')
+    state = _state(60.0)
+
+    cells = [
+        CellOutsideSurface(x=_X, material=m),
+        CellInsideSurface(x=_X, material=m),
+        CellOutsideEndPoint(x=_X, material=m, cond_h_o=10.0, cond_m_o=3.0e-8),
+        CellInsideEndPoint(x=_X, material=m, cond_h_i=9.0, cond_m_i=2.0e-8),
+        CellOutsideEndPointAirLayer(x=_X, material=m, ratio=1.0, v_threshold=0.0),
+        CellInsideEndPointAirLayer(x=_X, material=m, ratio=1.0, v_threshold=0.0),
+    ]
+
+    for cell in cells:
+        assert cell.r_liq_wp_mns(state=state) == float('inf'), type(cell).__name__
+        assert cell.r_liq_wp_pls(state=state) == float('inf'), type(cell).__name__
