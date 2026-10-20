@@ -98,6 +98,38 @@ def test_isotherm_sheathing_fortran(rh):
     assert m.get_u(rh) == pytest.approx(_fortran_sheathing_u(rh), rel=1e-12)
 
 
+def _fortran_glass_wool_u(rh: float) -> float:
+    """グラスウール系の平衡含水率, kg/kg。Fortran（Whamcavity.f95 の SUBROUTINE AHGANS の 13 番）を書き写したもの。
+
+    Fortran は最後に WD = D3*100. で % にしているので、その手前の D3（kg/kg）を返す。
+
+    Args:
+        rh: 相対湿度, %
+    """
+
+    d1 = rh * .01
+    d2 = math.exp(-1.3016 * (1 - d1**101.667))
+    d3 = 0.16 * d2 * d1**7.6448
+    if d1 > 0.98:
+        d3 = 47.79595 * d1 - 46.79595
+
+    return d3
+
+
+# Fortran で AHGANS の 13 番（グラスウール）の式を使う 6 材料
+_GLASS_WOOL_GROUP = ['グラスウール1', 'セルロースファイバー', '発泡プラスチック1', '発泡プラスチック2', '発泡プラスチック3', 'グラスウール2']
+
+
+@pytest.mark.parametrize('name', _GLASS_WOOL_GROUP)
+@pytest.mark.parametrize('rh', [1, 50, 90, 97, 98, 98.5, 99, 99.5, 100])
+def test_isotherm_glass_wool_fortran(name, rh):
+    """グラスウール系 6 材料の平衡含水率が、Fortran の式と一致することを確認する（RH 98% を超えると直線）。"""
+
+    m = _materials.get_material(name)
+
+    assert m.get_u(rh) == pytest.approx(_fortran_glass_wool_u(rh), rel=1e-12)
+
+
 @pytest.mark.parametrize('name', _materials.get_material_name())
 def test_vapor_conductivity(name):
     """湿気伝導率の部品が入っていて、基準値と同じ値になることを確認する。"""
