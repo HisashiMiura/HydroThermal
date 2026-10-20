@@ -248,3 +248,260 @@ def indicators(source: str, m: Material) -> dict:
         'rh_liquid': _rh_liquid(m),
         'flags': '; '.join(flags),
     }
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# 図
+# ---------------------------------------------------------------------------------------------------------------------
+
+import csv  # noqa: E402
+
+import matplotlib  # noqa: E402
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+
+# 図の保存先
+FIGURES = os.path.join(HERE, 'figures')
+
+# 文献の数値を書き写した CSV の置き場所
+REF_DATA = os.path.join(HERE, 'ref_data')
+
+# 系列の色（決まった順に使う。色覚の多様性を考えて検証済みの 8 色。9 色目は作らない）
+SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948']
+
+# 線の種類（同じ値で線が重なる材料も見分けられるように、色と一緒に変える）
+LINESTYLES = ['-', '--', ':', '-.']
+
+# 文献の値の点の印（色は黒・灰色で、Excel の材料の線と区別する）
+REF_MARKERS = ['o', 's', '^', 'D', 'v', 'P', 'X', '*']
+
+# 文字・軸・格子の色
+INK = '#0b0b0b'
+INK_SECONDARY = '#52514e'
+GRID = '#d9d8d4'
+
+plt.rcParams.update({
+    'font.family': 'Hiragino Sans',
+    'font.size': 9,
+    'axes.edgecolor': INK_SECONDARY,
+    'axes.labelcolor': INK,
+    'xtick.color': INK_SECONDARY,
+    'ytick.color': INK_SECONDARY,
+    'axes.grid': True,
+    'grid.color': GRID,
+    'grid.linewidth': 0.6,
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+    'legend.frameon': False,
+})
+
+# 曲線を描く相対湿度, %（高湿域を細かく）
+RHS_CURVE = np.concatenate([np.arange(1.0, 95.0, 0.5), np.arange(95.0, 100.0001, 0.05)])
+
+
+def read_refs(file_name: str) -> list[dict]:
+    """文献の数値の CSV（ref_data/ の中）を読む。
+
+    列: doc（文献の略称）, page（PDF のページ）, table（表・図の番号）, material（文献の材料名・試料）,
+        property（u, lambda_dsh_m, dw, lambda_h, rho, mu）, x（相対湿度 % または含水率 kg/kg。property によっては空欄）,
+        value（値）, note（吸湿・放湿の別、密度など）
+    """
+    with open(os.path.join(REF_DATA, file_name), encoding='utf-8', newline='') as f:
+        rows = list(csv.DictReader(f))
+    for r in rows:
+        r['x'] = float(r['x']) if r['x'] else math.nan
+        r['value'] = float(r['value'])
+    return rows
+
+
+def _ref_series(refs: list[dict], prop: str) -> dict:
+    """文献の値を、(文献, 表, 材料, 注記) ごとの点の並びにまとめる。{ラベル: (xs, ys)}"""
+    series = {}
+    for r in refs:
+        if r['property'] != prop:
+            continue
+        label = f"{r['doc']} p{r['page']} {r['material']}" + (f"（{r['note']}）" if r['note'] else '')
+        xs, ys = series.setdefault(label, ([], []))
+        xs.append(r['x'])
+        ys.append(r['value'])
+    return series
+
+
+def _check_series(materials: list) -> None:
+    if len(materials) > len(SERIES_COLORS):
+        raise ValueError(f'1 枚の図に描ける材料は {len(SERIES_COLORS)} つまでです（{len(materials)} 個）。図を分けてください。')
+
+
+def _positive(values) -> np.ndarray:
+    """対数目盛りに描くため、0 以下の値を NaN（描かない）にする。"""
+    values = np.array(values, dtype=float)
+    return np.where(values > 0, values, np.nan)
+
+
+def plot_moisture(materials: list[tuple[str, str]], refs: list[dict] = (), title: str = '',
+                  file_name: str | None = None, rh_min: float = 0.0):
+    """水分物性の曲線（4 枚組）を描く。Excel の材料は色つきの線、文献の値は黒・灰色の点。
+
+    1. 平衡含水率 u と相対湿度
+    2. 湿気伝導率（対数）と相対湿度。左端に静止空気の透湿率（μ = 1）の線を引く
+    3. 液水伝導率（対数）と相対湿度（20 ℃。水の密度 998 を掛けた今のプログラムの値）
+    4. 液水拡散係数（対数）と含水率（0 から RH 100% の含水率まで）
+
+    Args:
+        materials: (出どころ, 材料名) の一覧（8 つまで）
+        refs: 文献の値（read_refs の行）。property が u・lambda_dsh_m・dw の行を点で描く
+        title: 図の題
+        file_name: 保存するファイル名（figures/ の中）。省略すると保存しない
+        rh_min: 相対湿度の軸の左端, %
+    """
+
+    _check_series(materials)
+    ms = {(source, m.name): m for source, m in load_all()}
+
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8.2), layout='constrained')
+    ax_u, ax_vap, ax_liq, ax_dw = axes.flat
+    rhs = RHS_CURVE[RHS_CURVE >= rh_min]
+
+    for k, key in enumerate(materials):
+        m = ms[key]
+        style = dict(color=SERIES_COLORS[k], linestyle=LINESTYLES[k % len(LINESTYLES)], linewidth=2,
+                     label=f'{key[1]}（{key[0]}）')
+        ax_u.plot(rhs, [_safe(m.get_u, rh) for rh in rhs], **style)
+        ax_vap.plot(rhs, _positive([_safe(m.get_lambda_dsh_m, rh) for rh in rhs]), **style)
+        ax_liq.plot(rhs, _positive([_safe(m.get_lambda_dsh_mu_l, rh, T) for rh in rhs]), **style)
+        us = np.linspace(_safe(m.get_u, rhs[0]), _safe(m.get_u, 100.0), 400)
+        ax_dw.plot(us, _positive([_safe(m.liquid_diffusivity.d_w, u) for u in us]), **style)
+
+    for ax, prop in ((ax_u, 'u'), (ax_vap, 'lambda_dsh_m'), (ax_dw, 'dw')):
+        for j, (label, (xs, ys)) in enumerate(_ref_series(refs, prop).items()):
+            ax.plot(xs, ys, linestyle='none', marker=REF_MARKERS[j % len(REF_MARKERS)], markersize=6,
+                    markerfacecolor='white', markeredgecolor=INK if j < len(REF_MARKERS) else INK_SECONDARY,
+                    markeredgewidth=1.2, label=label)
+
+    ax_vap.axhline(delta_air(), color=INK_SECONDARY, linewidth=1, linestyle=(0, (4, 3)))
+    ax_vap.annotate('静止空気（μ = 1）', xy=(rhs[0], delta_air()), xytext=(2, 3), textcoords='offset points',
+                    color=INK_SECONDARY, fontsize=8)
+
+    ax_u.set(xlabel='相対湿度, %', ylabel='平衡含水率, kg/kg', title='平衡含水率', xlim=(rh_min, 100))
+    ax_vap.set(xlabel='相対湿度, %', ylabel='湿気伝導率, (kg/s)/(m Pa)', title='湿気伝導率', xlim=(rh_min, 100),
+               yscale='log')
+    ax_liq.set(xlabel='相対湿度, %', ylabel='液水伝導率, (kg/s)/(m (J/kg))', title='液水伝導率（20 ℃）',
+               xlim=(rh_min, 100), yscale='log')
+    ax_dw.set(xlabel='含水率, kg/kg', ylabel='液水拡散係数, m2/s', title='液水拡散係数', yscale='log')
+    for ax in axes.flat:
+        ax.grid(True, which='major')
+
+    handles, labels = [], []
+    for ax in (ax_u, ax_vap, ax_dw):
+        for h, lab in zip(*ax.get_legend_handles_labels()):
+            if lab not in labels:
+                handles.append(h)
+                labels.append(lab)
+    fig.legend(handles, labels, loc='outside lower center', ncol=2, fontsize=8)
+    if title:
+        fig.suptitle(title)
+
+    return _finish(fig, file_name)
+
+
+def plot_mu(materials: list[tuple[str, str]], ref_ranges: dict | None = None, title: str = '',
+            file_name: str | None = None):
+    """透湿抵抗比 μ を、材料ごとに RH 50% と RH 90% の 2 点で描く（対数目盛り）。
+
+    Args:
+        materials: (出どころ, 材料名) の一覧（何個でもよい。上から順に並べる）
+        ref_ranges: 文献の μ の範囲 {(出どころ, 材料名): (下限, 上限, 文献の略称)}。灰色の帯で描く
+        title: 図の題
+        file_name: 保存するファイル名（figures/ の中）
+    """
+
+    ms = {(source, m.name): m for source, m in load_all()}
+    ref_ranges = ref_ranges or {}
+    ys = np.arange(len(materials))
+
+    fig, ax = plt.subplots(figsize=(8, 0.32 * len(materials) + 1.4), layout='constrained')
+
+    for y, key in zip(ys, materials):
+        if key in ref_ranges:
+            lo, hi, _ = ref_ranges[key]
+            ax.plot([lo, hi], [y, y], color=GRID, linewidth=9, solid_capstyle='round', zorder=1)
+        mu50, mu90 = _mu(ms[key], 50), _mu(ms[key], 90)
+        if math.isnan(mu50) and math.isnan(mu90):
+            # 湿気伝導率が 0（μ は無限大）の材料は、点の代わりに文字で示す
+            ax.annotate('湿気伝導率 0（μ = ∞）', xy=(1, y), xytext=(6, 0), textcoords='offset points',
+                        color=INK_SECONDARY, fontsize=8, va='center')
+        ax.plot([mu50, mu90], [y, y], color=INK_SECONDARY, linewidth=1, zorder=2)
+    mu50s = [_mu(ms[key], 50) for key in materials]
+    mu90s = [_mu(ms[key], 90) for key in materials]
+    ax.plot(mu50s, ys, linestyle='none', marker='o', markersize=8, color=SERIES_COLORS[0], label='RH 50%', zorder=3)
+    ax.plot(mu90s, ys, linestyle='none', marker='o', markersize=8, color=SERIES_COLORS[1], label='RH 90%', zorder=3)
+    if ref_ranges:
+        ax.plot([], [], color=GRID, linewidth=9, label='文献の範囲')
+
+    ax.axvline(1, color=INK_SECONDARY, linewidth=1, linestyle=(0, (4, 3)))
+    ax.annotate('μ = 1（静止空気）', xy=(1, -0.5), xytext=(3, 0), textcoords='offset points', color=INK_SECONDARY,
+                fontsize=8, va='bottom')
+    ax.set_yticks(ys, [f'{name}（{source}）' for source, name in materials], fontsize=8)
+    ax.set_ylim(len(materials) - 0.5, -0.8)
+    ax.set_xscale('log')
+    ax.set_xlabel('透湿抵抗比 μ（静止空気の透湿率 ÷ 材料の湿気伝導率）')
+    ax.grid(True, axis='x', which='major')
+    ax.grid(False, axis='y')
+    fig.legend(loc='outside lower center', ncol=3, fontsize=8)
+    if title:
+        fig.suptitle(title)
+
+    return _finish(fig, file_name)
+
+
+# 熱伝導率と密度の散布図で、カテゴリに使う色（カテゴリの番号の順。その他は灰色）
+CATEGORY_COLORS = {category: SERIES_COLORS[category - 1] for category in range(1, 9)} | {0: '#a3a29b'}
+
+
+def plot_lambda_rho(refs: list[dict] = (), highlight: int | None = None, title: str = '熱伝導率と密度',
+                    file_name: str | None = None):
+    """全材料の熱伝導率と密度の散布図（両対数）。カテゴリで色分けし、文献の値を黒い印で重ねる。
+
+    Args:
+        refs: 文献の値（property が lambda_h で、x に密度を入れた行）
+        highlight: 強調するカテゴリの番号（ほかのカテゴリは薄くする）。省略するとすべて同じ濃さ
+        title: 図の題
+        file_name: 保存するファイル名（figures/ の中）
+    """
+
+    fig, ax = plt.subplots(figsize=(8, 6), layout='constrained')
+
+    points = {}
+    for source, m in load_all():
+        if m.rho <= 0 or m.lambda_h <= 0:
+            continue
+        points.setdefault(get_category(source, m.name), []).append((m.rho, m.lambda_h))
+
+    for category, name in CATEGORIES.items():
+        if category not in points:
+            continue
+        xs, ys = zip(*points[category])
+        alpha = 1.0 if highlight in (None, category) else 0.2
+        ax.plot(xs, ys, linestyle='none', marker='o', markersize=7, color=CATEGORY_COLORS[category],
+                markeredgecolor='white', markeredgewidth=1, alpha=alpha, label=f'{category} {name}' if category else name)
+
+    for j, (label, (xs, ys)) in enumerate(_ref_series(refs, 'lambda_h').items()):
+        ax.plot(xs, ys, linestyle='none', marker=REF_MARKERS[j % len(REF_MARKERS)], markersize=7,
+                markerfacecolor='white', markeredgecolor=INK, markeredgewidth=1.2, label=label)
+
+    ax.set(xscale='log', yscale='log', xlabel='乾燥密度, kg/m3', ylabel='熱伝導率, W/(m K)', title=title)
+    ax.grid(True, which='major')
+    legend = fig.legend(loc='outside right upper', fontsize=8)
+    for handle in legend.legend_handles:
+        handle.set_alpha(1.0)  # 薄くしたカテゴリも、凡例では見えるようにする
+
+    return _finish(fig, file_name)
+
+
+def _finish(fig, file_name: str | None):
+    """図を保存する（file_name があれば）。図を返す。"""
+    if file_name:
+        os.makedirs(FIGURES, exist_ok=True)
+        fig.savefig(os.path.join(FIGURES, file_name), dpi=130)
+    return fig
