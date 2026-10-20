@@ -516,8 +516,162 @@ def plot_lambda_rho(refs: list[dict] = (), highlight: int | None = None, title: 
 
 
 def _finish(fig, file_name: str | None):
-    """図を保存する（file_name があれば）。図を返す。"""
+    """図を保存する（file_name があれば。figures/ からの相対パス）。保存したら図を閉じる。"""
     if file_name:
-        os.makedirs(FIGURES, exist_ok=True)
-        fig.savefig(os.path.join(FIGURES, file_name), dpi=130)
+        path = os.path.join(FIGURES, file_name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fig.savefig(path, dpi=110)
+        plt.close(fig)
     return fig
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# 材料ごとの検証の図（1 枚に 1 つの物性。検証する材料を色、同じグループのほかの材料を灰色、文献を黒い印で描く）
+# ---------------------------------------------------------------------------------------------------------------------
+
+# 検証する材料の線の色
+TARGET_COLOR = SERIES_COLORS[0]
+
+# 同じグループのほかの材料の線の色
+OTHERS_COLOR = '#b9b8b2'
+
+# 1 つの物性の図の大きさ, inch
+ONE_FIGSIZE = (8.0, 4.6)
+
+
+def _materials_by_key() -> dict:
+    return {(source, m.name): m for source, m in load_all()}
+
+
+def _plot_others(ax, xs_of, others, ms):
+    """同じグループのほかの材料を、灰色の細い線で描く（凡例は 1 つにまとめる）。"""
+    for j, key in enumerate(others):
+        xs, ys = xs_of(ms[key])
+        ax.plot(xs, ys, color=OTHERS_COLOR, linewidth=1.2, zorder=1,
+                label='同じグループのほかの材料' if j == 0 else None)
+
+
+def _plot_refs(ax, refs: list[dict], prop: str):
+    for j, (label, (xs, ys)) in enumerate(_ref_series(refs, prop).items()):
+        ax.plot(xs, ys, linestyle='none', marker=REF_MARKERS[j % len(REF_MARKERS)], markersize=6.5,
+                markerfacecolor='white', markeredgecolor=INK, markeredgewidth=1.2, label=label, zorder=3)
+
+
+def _legend_below(fig, ax):
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc='outside lower center', ncol=2, fontsize=8)
+
+
+def plot_one_isotherm(target, others=(), refs=(), file_name=None):
+    """平衡含水率と相対湿度。縦軸は RH 98% までの値と文献の値が入る範囲にする。"""
+    ms = _materials_by_key()
+    rhs = RHS_CURVE
+    fig, ax = plt.subplots(figsize=ONE_FIGSIZE, layout='constrained')
+    _plot_others(ax, lambda m: (rhs, [_safe(m.get_u, rh) for rh in rhs]), others, ms)
+    m = ms[target]
+    ax.plot(rhs, [_safe(m.get_u, rh) for rh in rhs], color=TARGET_COLOR, linewidth=2.4, zorder=2,
+            label=f'{target[1]}（{target[0]}）')
+    _plot_refs(ax, refs, 'u')
+    u_top = max([_safe(ms[k].get_u, 98.0) for k in (target, *others)] + [r['value'] for r in refs if r['property'] == 'u'] + [0.01])
+    ax.set(xlabel='相対湿度, %', ylabel='平衡含水率, kg/kg', xlim=(0, 100), ylim=(0, u_top * 1.25))
+    _legend_below(fig, ax)
+    return _finish(fig, file_name)
+
+
+def plot_one_vapour(target, others=(), refs=(), file_name=None):
+    """湿気伝導率と相対湿度（対数目盛り）。静止空気（μ = 1）の線を引く。"""
+    ms = _materials_by_key()
+    rhs = RHS_CURVE
+    fig, ax = plt.subplots(figsize=ONE_FIGSIZE, layout='constrained')
+    _plot_others(ax, lambda m: (rhs, _positive([_safe(m.get_lambda_dsh_m, rh) for rh in rhs])), others, ms)
+    m = ms[target]
+    ax.plot(rhs, _positive([_safe(m.get_lambda_dsh_m, rh) for rh in rhs]), color=TARGET_COLOR, linewidth=2.4,
+            zorder=2, label=f'{target[1]}（{target[0]}）')
+    _plot_refs(ax, refs, 'lambda_dsh_m')
+    ax.axhline(delta_air(), color=INK_SECONDARY, linewidth=1, linestyle=(0, (4, 3)))
+    ax.annotate('静止空気の透湿率（μ = 1）', xy=(1, delta_air()), xytext=(2, -11), textcoords='offset points',
+                color=INK_SECONDARY, fontsize=8)
+    ax.set(xlabel='相対湿度, %', ylabel='湿気伝導率, (kg/s)/(m Pa)', xlim=(0, 100), yscale='log')
+    _legend_below(fig, ax)
+    return _finish(fig, file_name)
+
+
+def kunzel_dws(w: float, a: float, w_f: float) -> float:
+    """吸水係数から求める液水拡散係数（吸水過程）の目安, m2/s。Künzel (1995) の式。
+
+    Dws(w) = 3.8 · (A / wf)^2 · 1000^(w / wf − 1)
+
+    Args:
+        w: 含水量, kg/m3
+        a: 吸水係数 A, kg/(m2 s^0.5)（厚さ方向に吸水させて測った値）
+        w_f: 自由水飽和の含水量 wf, kg/m3
+    """
+    return 3.8 * (a / w_f)**2 * 1000**(w / w_f - 1)
+
+
+def kunzel_w_f(m: Material) -> float:
+    """Künzel の式に使う自由水飽和の含水量 wf, kg/m3。材料の平衡含水率の RH 99.8%（吸引圧 約 3×10^5 Pa）の値で代用する。"""
+    return _safe(m.get_u, 99.8) * m.rho
+
+
+def plot_one_diffusivity(target, others=(), refs=(), file_name=None, kunzel=None):
+    """液水拡散係数と含水率（対数目盛り）。検証する材料の RH 80・95・99% の含水率に縦の点線を引く。
+
+    Args:
+        kunzel: 厚さ方向の目安を描くときの (吸水係数の下限, 上限, 吸水係数の出典)。Künzel の式で、含水率 0〜wf の範囲に描く
+    """
+    ms = _materials_by_key()
+    fig, ax = plt.subplots(figsize=ONE_FIGSIZE, layout='constrained')
+
+    def curve(m):
+        us = np.linspace(0.0, _safe(m.get_u, 100.0), 500)
+        return us, _positive([_safe(m.liquid_diffusivity.d_w, u) for u in us])
+
+    _plot_others(ax, curve, others, ms)
+    m = ms[target]
+    us, ds = curve(m)
+    ax.plot(us, ds, color=TARGET_COLOR, linewidth=2.4, zorder=2, label=f'{target[1]}（{target[0]}）')
+    _plot_refs(ax, refs, 'dw')
+    if kunzel:
+        a_lo, a_hi, source = kunzel
+        w_f = kunzel_w_f(m)
+        us_k = np.linspace(0.0, w_f / m.rho, 200)
+        lo = [kunzel_dws(u * m.rho, a_lo, w_f) for u in us_k]
+        hi = [kunzel_dws(u * m.rho, a_hi, w_f) for u in us_k]
+        label = '厚さ方向の目安（Künzel の式）'
+        ax.fill_between(us_k, lo, hi, color=INK, alpha=0.12, linewidth=0, zorder=0)
+        ax.plot(us_k, hi, color=INK, linewidth=1.1, linestyle='--', zorder=1, label=label)
+        if a_hi != a_lo:
+            ax.plot(us_k, lo, color=INK, linewidth=1.1, linestyle='--', zorder=1)
+    for rh in (80, 95, 99):
+        u = _safe(m.get_u, rh)
+        ax.axvline(u, color=INK_SECONDARY, linewidth=0.8, linestyle=':', zorder=0)
+        ax.annotate(f'RH {rh}%', xy=(u, 1), xycoords=('data', 'axes fraction'), xytext=(2, -10),
+                    textcoords='offset points', color=INK_SECONDARY, fontsize=7.5, rotation=90, va='top')
+    ax.set(xlabel='含水率, kg/kg', ylabel='液水拡散係数, m2/s', yscale='log')
+    if np.all(np.isnan(ds)):
+        ax.annotate('この材料は液水が移動しない設定（液水拡散係数 0）', xy=(0.5, 0.5), xycoords='axes fraction',
+                    ha='center', color=TARGET_COLOR, fontsize=10)
+    _legend_below(fig, ax)
+    return _finish(fig, file_name)
+
+
+def plot_one_lambda_rho(target, category: int, refs=(), file_name=None):
+    """熱伝導率と密度（両対数）。全材料を薄い灰色、同じカテゴリを薄い色、検証する材料を大きな印で描く。"""
+    fig, ax = plt.subplots(figsize=ONE_FIGSIZE, layout='constrained')
+    same, rest = [], []
+    for source, m in load_all():
+        if m.rho <= 0 or m.lambda_h <= 0:
+            continue
+        (same if get_category(source, m.name) == category else rest).append((m.rho, m.lambda_h))
+    ax.plot(*zip(*rest), linestyle='none', marker='o', markersize=5, color=OTHERS_COLOR, alpha=0.6,
+            label='ほかのカテゴリの材料', zorder=1)
+    ax.plot(*zip(*same), linestyle='none', marker='o', markersize=6, color=CATEGORY_COLORS[category], alpha=0.45,
+            label=f'{CATEGORIES[category]}のほかの材料', zorder=2)
+    m = _materials_by_key()[target]
+    ax.plot([m.rho], [m.lambda_h], linestyle='none', marker='o', markersize=11, color=TARGET_COLOR,
+            markeredgecolor='white', markeredgewidth=1.5, label=f'{target[1]}（{target[0]}）', zorder=4)
+    _plot_refs(ax, refs, 'lambda_h')
+    ax.set(xscale='log', yscale='log', xlabel='乾燥密度, kg/m3', ylabel='熱伝導率, W/(m K)')
+    _legend_below(fig, ax)
+    return _finish(fig, file_name)

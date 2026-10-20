@@ -2,3 +2,5 @@ __pycache__/
 .DS_Store
 # 文献（PDF など）。著作権があるので公開リポジトリには入れず、非公開リポジトリ HydroThermal-references を clone して置く
 docs/reference/papers/
+# 材料物性レビューのレポートは Markdown と図だけを入れる（PDF は作らない）
+docs/reference/material_review/*.pdf
