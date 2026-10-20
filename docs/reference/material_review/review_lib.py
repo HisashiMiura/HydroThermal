@@ -322,7 +322,7 @@ def _ref_label(r: dict) -> str:
     side = r['note'] if r['note'] in ('吸湿', '放湿') else ''
     # 木材の方向（繊維方向・繊維直交方向）は系列を分ける
     direction = next((d for d in ('繊維直交方向', '繊維方向') if d in r['note']), '')
-    label = f"{r['doc']} p{r['page']} {r['material']}"
+    label = f"{r['doc']} p{r['page']} {r['material']}" if r['page'] else f"{r['doc']} {r['material']}"
     if tags:
         label += ' ' + tags[0]
     if side or direction:
