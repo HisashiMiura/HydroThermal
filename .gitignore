@@ -1,2 +1,4 @@
 __pycache__/
 .DS_Store
+# 文献（PDF など）。著作権があるので公開リポジトリには入れず、非公開リポジトリ HydroThermal-references を clone して置く
+docs/reference/papers/
