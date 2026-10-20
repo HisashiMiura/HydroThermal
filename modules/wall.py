@@ -5,7 +5,7 @@ from .weather import OutdoorCondition
 from modules.nrain import NRAIN, get_nrains_of_walls
 from .thermo_dynamics import ATP, get_dpv_dt, get_dpv_dmu, RW, CPL, ROW_CP, COND_M_AIR, R_M_BS
 from .materials import Materials, Material
-from .material_loaders import load_whamcavity
+from .material_loaders import load_materials
 from .input_wall import InputWall
 from .wall_surface import WallSurface
 from modules.state import State
@@ -60,6 +60,9 @@ class Layer:
     # 通気層の場合の流量係数α（高さ1mあたりの値）　三浦コメント：これは高さ1mあたりではなく、幅1mあたりの間違いでは？
     alpha: float
 
+    # 材料の出どころ（material_loaders.MATERIAL_SOURCES のキー）。材料は「出どころ ＋ 名称」で探す。
+    source: str = 'whamcavity'
+
     @property
     def dx(self):
         if self.n_div == 1:
@@ -68,6 +71,23 @@ class Layer:
             d1 = self.n_div - 1
         
         return self.thick / d1
+
+
+def get_materials_of_layers(layers: list[Layer]) -> list[Material]:
+    """層ごとの材料を、層の「出どころ ＋ 名称」で探す。
+
+    出どころごとに材料の一覧を1回だけ読み込み、その中から名称で探す。
+    出どころが違えば、同じ名称の材料があっても区別できる。
+
+    Args:
+        layers: 層の一覧
+    Returns:
+        層と同じ順の材料の一覧
+    """
+
+    ms_by_source = {source: Materials(load_materials(source)) for source in {layer.source for layer in layers}}
+
+    return [ms_by_source[layer.source].get_material(name=layer.name) for layer in layers]
 
 
 @dataclass
@@ -601,9 +621,11 @@ class Wall:
         # レイヤー表面の質点において、SideA側の質点の場合はSideB側のみが、SideB側の質点の場合はSideA側のみが定義される。
         dx_is = np.array([layers[layer_index].dx for layer_index in lookup_table])
 
+        # 層ごとの材料（出どころ ＋ 名称で探す）
+        material_of_layers = get_materials_of_layers(layers=layers)
+
         # 材料, Material クラス, [I]
-        ms = Materials(load_whamcavity())
-        material_is = [ms.get_material(name=layers[layer_index].name) for layer_index in lookup_table]
+        material_is = [material_of_layers[layer_index] for layer_index in lookup_table]
 
         # 質点iの密度, kg/m3, [I]
         gma_is = np.array([material_i.rho for material_i in material_is])

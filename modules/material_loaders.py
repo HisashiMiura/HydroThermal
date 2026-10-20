@@ -246,6 +246,31 @@ def _material_from_mews_ashrae_row(row: Series) -> Material:
     )
 
 
+# 材料の出どころ（Excel）とローダーの一覧。壁の層は「出どころ ＋ 材料名」で材料を指定する。
+# 出どころが違えば、同じ材料名があっても区別できる。
+MATERIAL_SOURCES = {
+    # 旧 Excel（Fortran 版の19材料）
+    'whamcavity': load_whamcavity,
+    # 新しい Excel（MEWS 42材料・ASHRAE 38材料と Air）
+    'mews_ashrae': load_mews_ashrae,
+}
+
+
+def load_materials(source: str) -> list[Material]:
+    """出どころの名前を指定して、材料の一覧を読み込む。
+
+    Args:
+        source: 材料の出どころの名前（MATERIAL_SOURCES のキー。'whamcavity' または 'mews_ashrae'）
+    Returns:
+        Material の一覧
+    """
+
+    if source not in MATERIAL_SOURCES:
+        raise ValueError(f'材料の出どころが見つかりません: {source}（使えるのは {", ".join(MATERIAL_SOURCES)}）')
+
+    return MATERIAL_SOURCES[source]()
+
+
 def _liquid_diffusivity_from_ranges(
         n_ranges: int,
         ranges: list[tuple[float, float, tuple[float, float, float, float, float, float, float]]],

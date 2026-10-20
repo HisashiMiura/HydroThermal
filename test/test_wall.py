@@ -6,7 +6,9 @@ from modules.materials import Materials
 from modules.material_loaders import load_whamcavity
 from modules.state import State
 from modules.thermo_dynamics import get_dpv_dmu
-from modules.wall import Wall
+from modules import material_loaders
+from modules.materials import Material
+from modules.wall import Wall, Layer, get_materials_of_layers
 
 
 _whamcavity = Materials(load_whamcavity())
@@ -88,3 +90,57 @@ def test_c_liq_wp_one_side_no_liquid():
     state_99 = State.init(t=293.15, rh=99.0)
 
     assert wall._c_liq_wp_i_mns(i=1, state=state_99, state_mns=_states[1]) == 0.0
+
+
+def _layer(name: str, source: str | None = None) -> Layer:
+    """材料を探すテスト用の層を作る（材料の出どころと名称以外は使わないので適当な値）。"""
+
+    kwargs = {} if source is None else {'source': source}
+
+    return Layer(
+        num=0, name=name, initial_temp=20.0, initial_humidity=60.0, thick=0.01, n_div=1,
+        cond_h_o=9.2, cond_h_i=9.2, cond_m_o=3.43E-08, cond_m_i=3.43E-08, alpha=0.0, **kwargs)
+
+
+def test_get_materials_of_layers():
+    """層ごとに、出どころと名称で材料が探せることを確認する。出どころを省略すると旧 Excel になる。"""
+
+    layers = [
+        _layer('サイディング'),
+        _layer('ASHRAE Plywood -1', source='mews_ashrae'),
+        _layer('構造用合板1', source='whamcavity'),
+    ]
+
+    ms = get_materials_of_layers(layers=layers)
+
+    assert [m.name for m in ms] == ['サイディング', 'ASHRAE Plywood -1', '構造用合板1']
+    assert ms[1].rho == 445.0
+    assert ms[2].rho == 600.0
+
+
+def test_get_materials_of_layers_same_name(monkeypatch):
+    """出どころが違えば、同じ名称の材料があっても区別できることを確認する。
+
+    同じ名称「合板」で密度だけが違う材料を返す、2つのテスト用の出どころを使う。
+    """
+
+    plywood = _whamcavity.get_material('構造用合板1')
+
+    def loader(rho):
+        return lambda: [Material(
+            name='合板', lambda_h=plywood.lambda_h, c=plywood.c, rho=rho, isotherm=plywood.isotherm,
+            vapor_conductivity=plywood.vapor_conductivity, liquid_diffusivity=plywood.liquid_diffusivity)]
+
+    monkeypatch.setitem(material_loaders.MATERIAL_SOURCES, 'source_a', loader(500.0))
+    monkeypatch.setitem(material_loaders.MATERIAL_SOURCES, 'source_b', loader(700.0))
+
+    ms = get_materials_of_layers(layers=[_layer('合板', source='source_a'), _layer('合板', source='source_b')])
+
+    assert [m.rho for m in ms] == [500.0, 700.0]
+
+
+def test_get_materials_of_layers_unknown_source():
+    """層の出どころの名前を間違えたとき、ValueError になることを確認する。"""
+
+    with pytest.raises(ValueError, match='出どころ'):
+        get_materials_of_layers(layers=[_layer('サイディング', source='mews')])

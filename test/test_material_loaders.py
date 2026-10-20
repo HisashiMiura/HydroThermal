@@ -8,7 +8,8 @@ import pytest
 
 
 from modules.material_loaders import (
-    WHAMCAVITY_FILE, load_whamcavity, MEWS_ASHRAE_FILE, load_mews_ashrae, _liquid_diffusivity_from_ranges
+    WHAMCAVITY_FILE, load_whamcavity, MEWS_ASHRAE_FILE, load_mews_ashrae, _liquid_diffusivity_from_ranges,
+    MATERIAL_SOURCES, load_materials,
 )
 from modules.material_props import NoLiquidDiffusivity
 
@@ -421,3 +422,27 @@ def test_load_mews_ashrae_duplicate_name(tmp_path):
 
     with pytest.raises(ValueError, match='重複'):
         load_mews_ashrae(path)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# 材料の出どころ
+# ---------------------------------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize('source, n', [('whamcavity', 19), ('mews_ashrae', 81)])
+def test_load_materials(source, n):
+    """出どころの名前で、それぞれの Excel の材料が読み込まれることを確認する。"""
+
+    assert len(load_materials(source)) == n
+
+
+def test_load_materials_unknown_source():
+    """出どころの名前を間違えたとき、使える名前を示す ValueError になることを確認する。"""
+
+    with pytest.raises(ValueError, match='whamcavity, mews_ashrae'):
+        load_materials('mews')
+
+
+def test_material_sources():
+    """出どころの一覧に、2つの Excel のローダーが入っていることを確認する。"""
+
+    assert MATERIAL_SOURCES == {'whamcavity': load_whamcavity, 'mews_ashrae': load_mews_ashrae}
