@@ -69,14 +69,14 @@ def test_interior_r_m_plywood1_depends_on_rh():
 
 @pytest.mark.parametrize('rh', _RHS)
 def test_interior_r_m_constant(rh):
-    """固定値の材料（グラスウール1）では、どの湿度でも「幅 ÷ 固定値 ÷ 2」（変更前と同じ値）になることを確認する。"""
+    """固定値の材料（グラスウール1）では、どの湿度でも「幅 ÷ 旧 Excel の固定値 ÷ 2」（変更前と同じ値）になることを確認する。"""
 
     m = _whamcavity.get_material('グラスウール1')
     cell = CellInterior(x=_X, material=m)
     state = _state(rh)
 
-    assert cell.r_m_mns(state=state) == _X / m.lambda_dsh_m / 2
-    assert cell.r_m_pls(state=state) == _X / m.lambda_dsh_m / 2
+    assert cell.r_m_mns(state=state) == _X / m.vapor_conductivity.value / 2
+    assert cell.r_m_pls(state=state) == _X / m.vapor_conductivity.value / 2
 
 
 @pytest.mark.parametrize('rh', _RHS)
@@ -124,11 +124,10 @@ def test_air_layer_r_m():
 
 @pytest.mark.parametrize('rh', _RHS)
 def test_interior_r_m_mews_ashrae(rh):
-    """新しい Excel の材料（湿気伝導率の固定値が None）でも、湿度で決まる透湿抵抗を計算できることを確認する。"""
+    """新しい Excel の材料（湿気伝導率は湿度で変わる式だけ）で、湿度で決まる透湿抵抗を計算できることを確認する。"""
 
     m = _mews_ashrae.get_material('ASHRAE Plywood -1')
     cell = CellInterior(x=_X, material=m)
     state = _state(rh)
 
-    assert m.lambda_dsh_m is None
     assert cell.r_m_pls(state=state) == pytest.approx(_X / m.vapor_conductivity.lambda_dsh_m(state.rh * 0.01) / 2, rel=1e-12)

@@ -302,7 +302,7 @@ def test_load_mews_ashrae():
 
 @pytest.mark.parametrize('no', list(_data_rows.keys()))
 def test_load_mews_ashrae_basic_values(no):
-    """密度・比熱・熱伝導率が Excel の値と同じで、湿気伝導率の固定値が None であることを確認する。"""
+    """密度・比熱・熱伝導率が Excel の値と同じであることを確認する。"""
 
     m = _mews_ashrae_materials[no]
     row = _data_rows[no]
@@ -310,7 +310,6 @@ def test_load_mews_ashrae_basic_values(no):
     assert m.rho == row[2]
     assert m.c == row[3]
     assert m.lambda_h == row[4]
-    assert m.lambda_dsh_m is None
 
 
 @pytest.mark.parametrize('no', list(_vapor_expected.keys()))

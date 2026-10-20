@@ -133,7 +133,6 @@ def _material_from_whamcavity_row(name: str, row: Series) -> Material:
     return Material(
         name=name,
         lambda_h=thermal_conductivity,
-        lambda_dsh_m=moisture_conductivity,
         c=specific_heat,
         rho=density,
         isotherm=isotherm,
@@ -154,9 +153,6 @@ def load_mews_ashrae(path: str = MEWS_ASHRAE_FILE) -> list[Material]:
         （平衡含水率の上限 f = 87 は 1000 ÷ 11.5 で、密度 11.5 のときの値のまま）。
         2つ目以降に出てきた同じ名前の材料は、名前の後ろに密度を足して区別する（例: "... (32 kg/m3)"）。足したときはログ（WARNING）に出す。
         Excel の値は変えない。足しても重なるときは ValueError にする。
-
-    湿気伝導率の固定値 lambda_dsh_m は、新しい Excel に列がないので None とする（2026-10-20 に決定）。
-    cell.py の透湿抵抗は今はこの固定値を使うので、手順 3（湿度依存にする）の前に、これらの材料を壁の計算に使うことはできない。
 
     Args:
         path: Excel ファイルのパス（省略すると modules/materials_mews_ashrae.xlsx）
@@ -242,7 +238,6 @@ def _material_from_mews_ashrae_row(row: Series) -> Material:
     return Material(
         name=name,
         lambda_h=float(row[4]),
-        lambda_dsh_m=None,
         c=float(row[3]),
         rho=float(row[2]),
         isotherm=isotherm,
