@@ -67,6 +67,37 @@ def test_isotherm(name):
         assert m.isotherm.u(rh * 0.01) == pytest.approx(expected, rel=1e-12), f'RH={rh}%'
 
 
+def _fortran_sheathing_u(rh: float) -> float:
+    """シージングの平衡含水率, kg/kg。Fortran（Whamcavity.f95 の SUBROUTINE AHGANS の 11 番）を書き写したもの。
+
+    Fortran の式は含水率を %（wt%）で返すので、100 で割って kg/kg にする。
+
+    Args:
+        rh: 相対湿度, %
+    """
+
+    if rh <= 89:
+        wd = -math.log(1 - .01 * rh) / .1612944
+    elif rh < 95:
+        wd = 639.22 - 14.988 * rh + .08943 * rh * rh
+    else:
+        wd = 2.446 * rh - 209.9
+
+    return wd / 100
+
+
+@pytest.mark.parametrize('rh', [1, 30, 50, 80, 89, 89.5, 92, 94.9, 95.1, 97, 99, 99.5])
+def test_isotherm_sheathing_fortran(rh):
+    """シージングの平衡含水率が、Fortran の式を kg/kg に直した値と一致することを確認する。
+
+    RH 95% ちょうどは、Fortran は直線、Python は 2 次式を使う（境目の扱いの違い。値の差は 0.02%）ので含めない。
+    """
+
+    m = _materials.get_material('シージング')
+
+    assert m.get_u(rh) == pytest.approx(_fortran_sheathing_u(rh), rel=1e-12)
+
+
 @pytest.mark.parametrize('name', _materials.get_material_name())
 def test_vapor_conductivity(name):
     """湿気伝導率の部品が入っていて、基準値と同じ値になることを確認する。"""
