@@ -144,7 +144,10 @@ def test_r_liq_wp_no_liquid():
 
 
 def test_r_liq_wp_plywood1():
-    """構造用合板1 では、液水拡散係数の範囲の外（RH 60%）で無限大、範囲の中（RH 99%）で「幅 ÷ 液水伝導率」になることを確認する。"""
+    """構造用合板1 では、液水拡散係数の範囲の外（RH 60%）で無限大、範囲の中（RH 99%）で「幅 ÷ 2 ÷ 液水伝導率」になることを確認する。
+
+    CellInterior の抵抗（－）・（＋）は、セルの室外側半分・室内側半分の抵抗なので、熱・水蒸気と同じく幅の半分で計算する。
+    """
 
     m = _whamcavity.get_material('構造用合板1')
     cell = CellInterior(x=_X, material=m)
@@ -152,7 +155,7 @@ def test_r_liq_wp_plywood1():
     assert cell.r_liq_wp_pls(state=_state(60.0)) == float('inf')
 
     state = _state(99.0)
-    expected = _X / m.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+    expected = _X / 2 / m.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
     assert 0.0 < expected < float('inf')
     assert cell.r_liq_wp_mns(state=state) == expected
     assert cell.r_liq_wp_pls(state=state) == expected

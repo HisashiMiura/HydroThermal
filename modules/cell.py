@@ -454,9 +454,9 @@ class CellInterior(CellMaterial):
 
     def r_liq_wp_mns(self, state: State) -> float:
         """水分伝導抵抗（－）, (m2 (J/kg))/(kg/s)"""
-        return self._r_liq_wp(x=self.x, state=state)
+        return self._r_liq_wp(x=self.x / 2, state=state)
 
     def r_liq_wp_pls(self, state: State) -> float:
         """水分伝導抵抗（＋）, (m2 (J/kg))/(kg/s)"""
-        return self._r_liq_wp(x=self.x, state=state)
+        return self._r_liq_wp(x=self.x / 2, state=state)
 
