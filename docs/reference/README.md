@@ -8,12 +8,13 @@
 | `mews_check/` | MEWS の照合スクリプトと出力 |
 | `ashrae_excel_derivation.md`（.pdf） | 同じ Excel の ASHRAE の材料（No.43〜80）と、Kumaran (2006) の照合 |
 | `ashrae_check/` | ASHRAE の照合スクリプトと出力 |
-| `papers/` | 文献（PDF など）。**このリポジトリには入っていない**（下の説明） |
+| `papers/` | 文献（PDF など）と、作業の引き継ぎメモ `HANDOFF.md`。**このリポジトリには入っていない**（下の説明） |
 
 ## 文献のフォルダ `papers/`
 
 文献には著作権があるので、公開リポジトリのこのリポジトリには入れない（`.gitignore` で除外している）。
 文献は非公開リポジトリ `HydroThermal-references` に入れ、`docs/reference/papers/` に clone して使う。
+作業の引き継ぎメモ `HANDOFF.md`（作業の進め方・決めたこと・見つかっている問題）も、同じ非公開リポジトリに入れている。
 
 文献の入手先は、2 つのレポートの 2 章「出典資料の入手先」に書いてある。
 
