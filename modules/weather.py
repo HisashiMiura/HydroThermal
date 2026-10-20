@@ -3,10 +3,10 @@ from dataclasses import dataclass
 import pandas as pd
 import os
 
-from config import ATP
+from modules.thermo_dynamics import ATP
 from .thermo_dynamics import GOFF, get_wp, get_rho
-import solar_position
-from date_operation import get_step_d, get_step_d_t
+from modules import solar_position
+from modules.date_operation import get_step_d, get_step_d_t
 
 
 @dataclass

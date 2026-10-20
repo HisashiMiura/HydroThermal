@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .weather import OutdoorCondition
-from nrain import NRAIN, get_nrains_of_walls
+from modules.nrain import NRAIN, get_nrains_of_walls
 from .thermo_dynamics import ATP, get_dpv_dt, get_dpv_dmu, RW, CPL, ROW_CP, COND_M_AIR, R_M_BS
 from .materials import Materials, Material
 from .material_loaders import load_whamcavity
