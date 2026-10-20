@@ -38,15 +38,13 @@ class Cell(ABC):
         """熱抵抗（＋）, (m2 K)/W"""
         pass
 
-    @property
     @abstractmethod
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
         pass
 
-    @property
     @abstractmethod
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
         pass
 
@@ -101,13 +99,11 @@ class CellAirLayer(Cell):
         """熱抵抗（＋）, (m2 K)/W"""
         return 0.0
 
-    @property
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
         return 0.0
 
-    @property
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
         return 0.0
 
@@ -165,15 +161,13 @@ class CellMaterial(Cell):
         """熱抵抗（＋）, (m2 K)/W"""
         pass
 
-    @property
     @abstractmethod
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
         pass
 
-    @property
     @abstractmethod
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
         pass
 
@@ -213,15 +207,13 @@ class CellOutsideSurface(CellMaterial):
         """熱抵抗（＋）, (m2 K)/W"""
         return self.x / self.material.lambda_h
     
-    @property
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
         return 1 / COND_M_O
     
-    @property
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
-        return self.x / self.material.lambda_dsh_m
+        return self.x / self.material.get_lambda_dsh_m(rh=state.rh)
 
     def r_liq_wp_mns(self, state: State) -> float:
         """水分伝導抵抗（－）, (m2 (J/kg))/(kg/s)"""
@@ -246,13 +238,11 @@ class CellInsideSurface(CellMaterial):
         """熱抵抗（＋）, (m2 K)/W"""
         return 1 / COND_H_I
 
-    @property
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
-        return self.x / self.material.lambda_dsh_m
+        return self.x / self.material.get_lambda_dsh_m(rh=state.rh)
     
-    @property
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
         return 1 / COND_M_I
 
@@ -286,15 +276,13 @@ class CellOutsideEndPoint(CellMaterial):
         """熱抵抗（＋）, (m2 K)/W"""
         return self.x / self.material.lambda_h
 
-    @property
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
         return 1 / self.cond_m_o
     
-    @property
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
-        return self.x / self.material.lambda_dsh_m
+        return self.x / self.material.get_lambda_dsh_m(rh=state.rh)
 
     def r_liq_wp_mns(self, state: State) -> float:
         """水分伝導抵抗（－）, (m2 (J/kg))/(kg/s)"""
@@ -326,13 +314,11 @@ class CellInsideEndPoint(CellMaterial):
         """熱抵抗（＋）, (m2 K)/W"""
         return 1 / self.cond_h_i
 
-    @property
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
-        return self.x / self.material.lambda_dsh_m
+        return self.x / self.material.get_lambda_dsh_m(rh=state.rh)
     
-    @property
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
         return 1 / self.cond_m_i
 
@@ -365,15 +351,13 @@ class CellOutsideEndPointAirLayer(CellMaterial):
         """熱抵抗（＋）, (m2 K)/W"""
         return self.x / self.material.lambda_h
 
-    @property
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
         return 1 / COND_M_AIR
     
-    @property
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
-        return self.x / self.material.lambda_dsh_m
+        return self.x / self.material.get_lambda_dsh_m(rh=state.rh)
 
     def r_liq_wp_mns(self, state: State) -> float:
         """水分伝導抵抗（－）, (m2 (J/kg))/(kg/s)"""
@@ -409,13 +393,11 @@ class CellInsideEndPointAirLayer(CellMaterial):
         """熱抵抗（＋）, (m2 K)/W"""
         return 1 / COND_H_AIR
 
-    @property
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
-        return self.x / self.material.lambda_dsh_m
+        return self.x / self.material.get_lambda_dsh_m(rh=state.rh)
     
-    @property
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
         return 1 / COND_M_AIR
 
@@ -447,15 +429,13 @@ class CellInterior(CellMaterial):
         """熱抵抗（＋）, (m2 K)/W"""
         return self.x / self.material.lambda_h / 2
 
-    @property
-    def r_m_mns(self) -> float:
+    def r_m_mns(self, state: State) -> float:
         """透湿抵抗（ー）, (m2 Pa)/(kg/s)"""
-        return self.x / self.material.lambda_dsh_m / 2
+        return self.x / self.material.get_lambda_dsh_m(rh=state.rh) / 2
 
-    @property
-    def r_m_pls(self) -> float:
+    def r_m_pls(self, state: State) -> float:
         """透湿抵抗（＋）, (m2 Pa)/(kg/s)"""
-        return self.x / self.material.lambda_dsh_m / 2
+        return self.x / self.material.get_lambda_dsh_m(rh=state.rh) / 2
 
     def r_liq_wp_mns(self, state: State) -> float:
         """水分伝導抵抗（－）, (m2 (J/kg))/(kg/s)"""

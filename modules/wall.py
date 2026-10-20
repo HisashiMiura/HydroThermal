@@ -199,11 +199,11 @@ class Wall:
         """温度差を駆動力とする水蒸気移動に関する係数（室外側）, (kg/(s m2))/K"""
         # dpv_dt：水蒸気圧の温度勾配, Pa/K
         # r_m：透湿抵抗, (m2 s Pa)/kg
-        return 1 / (self.cells_is[i-1].r_m_pls / self.dpv_dt(state=state_mns) + self.cells_is[i].r_m_mns / self.dpv_dt(state=state))
+        return 1 / (self.cells_is[i-1].r_m_pls(state=state_mns) / self.dpv_dt(state=state_mns) + self.cells_is[i].r_m_mns(state=state) / self.dpv_dt(state=state))
 
     def _c_vap_t_i_pls(self, i: int, state: State, state_pls: State) -> float:
         """温度差を駆動力とする水蒸気移動に関する係数（室内側）, (kg/(s m2))/K"""
-        return 1 / (self.cells_is[i+1].r_m_mns / self.dpv_dt(state=state_pls) + self.cells_is[i].r_m_pls / self.dpv_dt(state=state))
+        return 1 / (self.cells_is[i+1].r_m_mns(state=state_pls) / self.dpv_dt(state=state_pls) + self.cells_is[i].r_m_pls(state=state) / self.dpv_dt(state=state))
 
     def _c_vap_wp_i_mns(self, i: int, state: State, state_mns: State) -> float:
         """水分化学ポテンシャル差を駆動力とする水蒸気移動に関する係数（室外側）, (kg/(s m2))/(J/kg)"""
