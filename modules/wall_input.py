@@ -161,3 +161,29 @@ class AirLayerInput:
             raise ValueError(f"通気層の入力の 'air_layer' は True にしてください（{d['air_layer']!r}）。")
 
         return cls(**{k: d[k] for k in _AIR_LAYER_KEYS if k != 'air_layer'})
+
+
+# 層の入力：材料の層か通気層のどちらか
+LayerInput = MaterialLayerInput | AirLayerInput
+
+
+def layer_input_from_dict(d: dict) -> LayerInput:
+    """dict から層の入力を作る。'air_layer' のキーがあれば通気層、なければ材料の層として作る。
+
+    Args:
+        d: 材料の層なら MaterialLayerInput.from_dict、通気層なら AirLayerInput.from_dict の形の dict
+    """
+
+    # 'air_layer' のキーがあれば通気層
+    if 'air_layer' in d:
+
+        # 値が True でなければエラー（材料の層なら、このキー自体を書かない決まり）
+        # 先にここで確かめるのは、材料の層の dict に 'air_layer': False を書いたとき、
+        # 通気層のキーの不足（'alpha' がない など）ではなく、'air_layer' の書き方の誤りとして知らせるため
+        if d['air_layer'] is not True:
+            raise ValueError(f"層の入力の 'air_layer' は、通気層なら True、材料の層なら書かないでください（{d['air_layer']!r}）。")
+
+        return AirLayerInput.from_dict(d)
+
+    # なければ材料の層
+    return MaterialLayerInput.from_dict(d)

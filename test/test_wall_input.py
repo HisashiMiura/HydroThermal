@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from modules.wall_input import MaterialLayerInput, AirLayerInput
+from modules.wall_input import MaterialLayerInput, AirLayerInput, layer_input_from_dict
 
 
 def _material_layer() -> MaterialLayerInput:
@@ -132,3 +132,25 @@ class TestAirLayerInput:
         d[key] = 'x'
         with pytest.raises(ValueError, match=key):
             AirLayerInput.from_dict(d)
+
+
+class TestLayerInputFromDict:
+
+    def test_material_layer(self):
+        # 'air_layer' がなければ材料の層
+        layer = layer_input_from_dict(_material_layer_dict())
+        assert isinstance(layer, MaterialLayerInput)
+        assert layer == MaterialLayerInput.from_dict(_material_layer_dict())
+
+    def test_air_layer(self):
+        # 'air_layer': True なら通気層
+        layer = layer_input_from_dict(_air_layer_dict())
+        assert isinstance(layer, AirLayerInput)
+        assert layer == AirLayerInput.from_dict(_air_layer_dict())
+
+    def test_air_layer_false(self):
+        # 'air_layer': False は、材料の層としては読まず、エラーにする
+        d = _material_layer_dict()
+        d['air_layer'] = False
+        with pytest.raises(ValueError, match='air_layer'):
+            layer_input_from_dict(d)
