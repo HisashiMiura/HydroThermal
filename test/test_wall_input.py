@@ -28,3 +28,29 @@ class TestLayerInput:
         # 名前を付けずに（位置で）値を渡すとエラー（順番の間違いを防ぐ）
         with pytest.raises(TypeError):
             LayerInput('whamcavity', '構造用合板1', 0.009, 6, 10.0, 80.0)
+
+
+def _material_layer_dict() -> dict:
+    """材料の層の正しい入力の dict（構造用合板1、9 mm）。"""
+    return {'source': 'whamcavity', 'name': '構造用合板1', 'thickness': 0.009, 'n_div': 6,
+            'initial_temperature': 10.0, 'initial_rh': 80.0}
+
+
+class TestLayerInputFromDict:
+
+    def test_read(self):
+        # dict から作ったものと、直接作ったものが同じ
+        assert LayerInput.from_dict(_material_layer_dict()) == _material_layer()
+
+    @pytest.mark.parametrize('key', ['source', 'name', 'thickness', 'n_div', 'initial_temperature', 'initial_rh'])
+    def test_missing_key(self, key):
+        d = _material_layer_dict()
+        del d[key]
+        with pytest.raises(ValueError, match=key):
+            LayerInput.from_dict(d)
+
+    def test_unknown_key(self):
+        d = _material_layer_dict()
+        d['thicknes'] = 0.01
+        with pytest.raises(ValueError, match='thicknes'):
+            LayerInput.from_dict(d)

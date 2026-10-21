@@ -9,6 +9,28 @@
 from dataclasses import dataclass
 
 
+# 材料の層の入力の dict のキー（すべて必ず指定する）
+_MATERIAL_LAYER_KEYS = ('source', 'name', 'thickness', 'n_div', 'initial_temperature', 'initial_rh')
+
+
+def _check_keys(d: dict, required: tuple[str, ...], where: str):
+    """dict のキーを確かめる。必ず指定するキーがない、または知らないキー（打ち間違いなど）があればエラーにする。
+
+    Args:
+        d: 入力の dict
+        required: 必ず指定するキー（これ以外のキーは使えない）
+        where: エラーのメッセージに出す、どの入力か
+    """
+
+    missing = [k for k in required if k not in d]
+    if missing:
+        raise ValueError(f'{where} に {missing} がありません。')
+
+    unknown = sorted(set(d) - set(required))
+    if unknown:
+        raise ValueError(f'{where} に知らないキー {unknown} があります（使えるキー: {list(required)}）。')
+
+
 @dataclass(frozen=True, kw_only=True)
 class LayerInput:
     """層 1 枚分の入力（材料の層）。
@@ -33,3 +55,15 @@ class LayerInput:
 
     # 初期の相対湿度, %
     initial_rh: float
+
+    @classmethod
+    def from_dict(cls, d: dict) -> 'LayerInput':
+        """dict から作る。
+
+        Args:
+            d: {'source', 'name', 'thickness', 'n_div', 'initial_temperature', 'initial_rh'}（すべて必ず指定する）
+        """
+
+        _check_keys(d, _MATERIAL_LAYER_KEYS, where='層の入力')
+
+        return cls(**{k: d[k] for k in _MATERIAL_LAYER_KEYS})
