@@ -654,10 +654,17 @@ def plot_one_diffusivity(target, others=(), refs=(), file_name=None, kunzel=None
             ax.plot(us_k, lo, color=INK, linewidth=1.1, linestyle='--', zorder=1)
     for rh in (80, 95, 99):
         u = _safe(m.get_u, rh)
+        if u_max is not None and u > u_max:
+            continue  # 横軸を絞ったとき、範囲の外の線は描かない
         ax.axvline(u, color=INK_SECONDARY, linewidth=0.8, linestyle=':', zorder=0)
         ax.annotate(f'RH {rh}%', xy=(u, 1), xycoords=('data', 'axes fraction'), xytext=(2, -10),
                     textcoords='offset points', color=INK_SECONDARY, fontsize=7.5, rotation=90, va='top')
     ax.set(xlabel='含水率, kg/kg', ylabel='液水拡散係数, m2/s', yscale='log')
+    # 図の中に正の値が 1 つもない（液水が動かない材料ばかりで文献の値もない）ときは、縦軸の範囲を決めておく
+    has_positive = (np.any(ds > 0) or any(np.any(curve(ms[k])[1] > 0) for k in others)
+                    or any(r['property'] in ('dw', 'dw_const') and r['value'] > 0 for r in refs) or bool(kunzel))
+    if not has_positive:
+        ax.set_ylim(1e-16, 1e-6)
     if u_max is not None:
         ax.set_xlim(0, u_max)
     if np.all(np.isnan(ds)):
