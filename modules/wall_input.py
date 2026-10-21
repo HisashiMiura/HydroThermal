@@ -34,8 +34,8 @@ def _check_keys(d: dict, required: tuple[str, ...], where: str):
 
 
 @dataclass(frozen=True, kw_only=True)
-class LayerInput:
-    """層 1 枚分の入力（材料の層）。
+class MaterialLayerInput:
+    """材料の層 1 枚分の入力。
 
     層と層・層と空気の境目の値（接触・表面のコンダクタンス）は、ここではなく境目の入力が持つ。
     """
@@ -82,13 +82,13 @@ class LayerInput:
             raise ValueError(f'初期の相対湿度 initial_rh は 0 より大きく 100 より小さくしてください（{self.initial_rh}）。')
 
     @classmethod
-    def from_dict(cls, d: dict) -> 'LayerInput':
+    def from_dict(cls, d: dict) -> 'MaterialLayerInput':
         """dict から作る。
 
         Args:
             d: {'source', 'name', 'thickness', 'n_div', 'initial_temperature', 'initial_rh'}（すべて必ず指定する）
         """
 
-        _check_keys(d, _MATERIAL_LAYER_KEYS, where='層の入力')
+        _check_keys(d, _MATERIAL_LAYER_KEYS, where='材料の層の入力')
 
         return cls(**{k: d[k] for k in _MATERIAL_LAYER_KEYS})

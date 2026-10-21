@@ -2,16 +2,16 @@ import dataclasses
 
 import pytest
 
-from modules.wall_input import LayerInput
+from modules.wall_input import MaterialLayerInput
 
 
-def _material_layer() -> LayerInput:
+def _material_layer() -> MaterialLayerInput:
     """材料の層の正しい入力（構造用合板1、9 mm）。"""
-    return LayerInput(source='whamcavity', name='構造用合板1', thickness=0.009, n_div=6,
+    return MaterialLayerInput(source='whamcavity', name='構造用合板1', thickness=0.009, n_div=6,
                       initial_temperature=10.0, initial_rh=80.0)
 
 
-class TestLayerInput:
+class TestMaterialLayerInput:
 
     def test_values(self):
         layer = _material_layer()
@@ -27,7 +27,7 @@ class TestLayerInput:
     def test_keyword_only(self):
         # 名前を付けずに（位置で）値を渡すとエラー（順番の間違いを防ぐ）
         with pytest.raises(TypeError):
-            LayerInput('whamcavity', '構造用合板1', 0.009, 6, 10.0, 80.0)
+            MaterialLayerInput('whamcavity', '構造用合板1', 0.009, 6, 10.0, 80.0)
 
 
 def _material_layer_dict() -> dict:
@@ -36,27 +36,27 @@ def _material_layer_dict() -> dict:
             'initial_temperature': 10.0, 'initial_rh': 80.0}
 
 
-class TestLayerInputFromDict:
+class TestMaterialLayerInputFromDict:
 
     def test_read(self):
         # dict から作ったものと、直接作ったものが同じ
-        assert LayerInput.from_dict(_material_layer_dict()) == _material_layer()
+        assert MaterialLayerInput.from_dict(_material_layer_dict()) == _material_layer()
 
     @pytest.mark.parametrize('key', ['source', 'name', 'thickness', 'n_div', 'initial_temperature', 'initial_rh'])
     def test_missing_key(self, key):
         d = _material_layer_dict()
         del d[key]
         with pytest.raises(ValueError, match=key):
-            LayerInput.from_dict(d)
+            MaterialLayerInput.from_dict(d)
 
     def test_unknown_key(self):
         d = _material_layer_dict()
         d['thicknes'] = 0.01
         with pytest.raises(ValueError, match='thicknes'):
-            LayerInput.from_dict(d)
+            MaterialLayerInput.from_dict(d)
 
 
-class TestLayerInputValues:
+class TestMaterialLayerInputValues:
 
     @pytest.mark.parametrize('key, value', [
         ('source', 'excel'),
@@ -73,10 +73,10 @@ class TestLayerInputValues:
         d = _material_layer_dict()
         d[key] = value
         with pytest.raises(ValueError, match=key):
-            LayerInput.from_dict(d)
+            MaterialLayerInput.from_dict(d)
 
     def test_n_div_2(self):
         # 分割数 2（両端だけ）は作れる
         d = _material_layer_dict()
         d['n_div'] = 2
-        assert LayerInput.from_dict(d).n_div == 2
+        assert MaterialLayerInput.from_dict(d).n_div == 2
