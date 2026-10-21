@@ -616,17 +616,18 @@ def kunzel_w_f(m: Material) -> float:
     return _safe(m.get_u, 99.8) * m.rho
 
 
-def plot_one_diffusivity(target, others=(), refs=(), file_name=None, kunzel=None):
+def plot_one_diffusivity(target, others=(), refs=(), file_name=None, kunzel=None, u_max=None):
     """液水拡散係数と含水率（対数目盛り）。検証する材料の RH 80・95・99% の含水率に縦の点線を引く。
 
     Args:
         kunzel: 厚さ方向の目安を描くときの (吸水係数の下限, 上限, 吸水係数の出典[, wf kg/m3])。Künzel の式で、含水率 0〜wf の範囲に描く
+        u_max: 横軸（含水率）の右端, kg/kg。RH 100% の含水率がありえないほど大きい材料で、範囲を絞るときに使う
     """
     ms = _materials_by_key()
     fig, ax = plt.subplots(figsize=ONE_FIGSIZE, layout='constrained')
 
     def curve(m):
-        us = np.linspace(0.0, _safe(m.get_u, 100.0), 500)
+        us = np.linspace(0.0, min(_safe(m.get_u, 100.0), u_max or np.inf), 500)
         return us, _positive([_safe(m.liquid_diffusivity.d_w, u) for u in us])
 
     _plot_others(ax, curve, others, ms)
@@ -657,6 +658,8 @@ def plot_one_diffusivity(target, others=(), refs=(), file_name=None, kunzel=None
         ax.annotate(f'RH {rh}%', xy=(u, 1), xycoords=('data', 'axes fraction'), xytext=(2, -10),
                     textcoords='offset points', color=INK_SECONDARY, fontsize=7.5, rotation=90, va='top')
     ax.set(xlabel='含水率, kg/kg', ylabel='液水拡散係数, m2/s', yscale='log')
+    if u_max is not None:
+        ax.set_xlim(0, u_max)
     if np.all(np.isnan(ds)):
         ax.annotate('この材料は液水が移動しない設定（液水拡散係数 0）', xy=(0.5, 0.5), xycoords='axes fraction',
                     ha='center', color=TARGET_COLOR, fontsize=10)
