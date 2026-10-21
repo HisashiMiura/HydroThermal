@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from modules.wall_input import MaterialLayerInput, AirLayerInput, layer_input_from_dict
+from modules.wall_input import MaterialLayerInput, AirLayerInput, layer_input_from_dict, InterfaceInput
 
 
 def _material_layer() -> MaterialLayerInput:
@@ -154,3 +154,45 @@ class TestLayerInputFromDict:
         d['air_layer'] = False
         with pytest.raises(ValueError, match='air_layer'):
             layer_input_from_dict(d)
+
+
+def _interface_dict() -> dict:
+    """境目の正しい入力の dict（層と層の接触）。"""
+    return {'cond_h': 50.0, 'cond_m': 7.75e-7}
+
+
+class TestInterfaceInput:
+
+    def test_read(self):
+        interface = InterfaceInput.from_dict(_interface_dict())
+        assert (interface.cond_h, interface.cond_m) == (50.0, 7.75e-7)
+
+    def test_frozen(self):
+        interface = InterfaceInput.from_dict(_interface_dict())
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            interface.cond_h = 9.2
+
+    @pytest.mark.parametrize('key', ['cond_h', 'cond_m'])
+    def test_missing_key(self, key):
+        d = _interface_dict()
+        del d[key]
+        with pytest.raises(ValueError, match=key):
+            InterfaceInput.from_dict(d)
+
+    def test_unknown_key(self):
+        d = _interface_dict()
+        d['cond_hh'] = 9.2
+        with pytest.raises(ValueError, match='cond_hh'):
+            InterfaceInput.from_dict(d)
+
+    @pytest.mark.parametrize('key, value', [
+        ('cond_h', 0.0),
+        ('cond_h', -1.0),
+        ('cond_m', 0.0),
+        ('cond_m', -1.0e-11),
+    ])
+    def test_invalid_value(self, key, value):
+        d = _interface_dict()
+        d[key] = value
+        with pytest.raises(ValueError, match=key):
+            InterfaceInput.from_dict(d)
