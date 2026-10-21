@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from modules.wall_input import MaterialLayerInput
+from modules.wall_input import MaterialLayerInput, AirLayerInput
 
 
 def _material_layer() -> MaterialLayerInput:
@@ -80,3 +80,55 @@ class TestMaterialLayerInputValues:
         d = _material_layer_dict()
         d['n_div'] = 2
         assert MaterialLayerInput.from_dict(d).n_div == 2
+
+
+def _air_layer_dict() -> dict:
+    """通気層の正しい入力の dict（25 mm、α = 0.085）。"""
+    return {'air_layer': True, 'thickness': 0.025, 'alpha': 0.085, 'initial_temperature': 15.0, 'initial_rh': 50.0}
+
+
+class TestAirLayerInput:
+
+    def test_read(self):
+        layer = AirLayerInput.from_dict(_air_layer_dict())
+        assert (layer.thickness, layer.alpha, layer.n_div) == (0.025, 0.085, 1)
+        assert (layer.initial_temperature, layer.initial_rh) == (15.0, 50.0)
+
+    def test_frozen(self):
+        layer = AirLayerInput.from_dict(_air_layer_dict())
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            layer.alpha = 0.1
+
+    def test_alpha_0(self):
+        # α = 0（換気のない空気層）は作れる
+        d = _air_layer_dict()
+        d['alpha'] = 0.0
+        assert AirLayerInput.from_dict(d).alpha == 0.0
+
+    @pytest.mark.parametrize('key', ['air_layer', 'thickness', 'alpha', 'initial_temperature', 'initial_rh'])
+    def test_missing_key(self, key):
+        d = _air_layer_dict()
+        del d[key]
+        with pytest.raises(ValueError, match=key):
+            AirLayerInput.from_dict(d)
+
+    @pytest.mark.parametrize('key, value', [
+        ('air_layer', False),
+        ('thickness', 0.0),
+        ('alpha', -0.1),
+        ('initial_rh', 0.0),
+        ('initial_rh', 100.0),
+    ])
+    def test_invalid_value(self, key, value):
+        d = _air_layer_dict()
+        d[key] = value
+        with pytest.raises(ValueError, match=key):
+            AirLayerInput.from_dict(d)
+
+    @pytest.mark.parametrize('key', ['name', 'source', 'n_div'])
+    def test_not_allowed_key(self, key):
+        # 通気層には材料も分割数も指定できない
+        d = _air_layer_dict()
+        d[key] = 'x'
+        with pytest.raises(ValueError, match=key):
+            AirLayerInput.from_dict(d)
