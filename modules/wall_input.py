@@ -8,6 +8,7 @@
 
 from dataclasses import dataclass
 
+from modules.direction import Direction
 from modules.material_loaders import MATERIAL_SOURCES
 
 
@@ -19,6 +20,9 @@ _AIR_LAYER_KEYS = ('air_layer', 'thickness', 'alpha', 'initial_temperature', 'in
 
 # 境目の入力の dict のキー（すべて必ず指定する）
 _INTERFACE_KEYS = ('cond_h', 'cond_m')
+
+# 外表面の入力の dict のキー（すべて必ず指定する）
+_SURFACE_KEYS = ('direction', 'angle', 'albedo', 'absorptance', 'emissivity', 'eva_height')
 
 
 def _check_keys(d: dict, required: tuple[str, ...], where: str):
@@ -229,3 +233,77 @@ class InterfaceInput:
         _check_keys(d, _INTERFACE_KEYS, where='境目の入力')
 
         return cls(**{k: d[k] for k in _INTERFACE_KEYS})
+
+
+@dataclass(frozen=True, kw_only=True)
+class SurfaceInput:
+    """壁の外表面の入力（向きと、日射・放射・風に関わる性質）。
+
+    壁の大きさ（縦・横の長さ、換気計算用の高さ）は、ここではなく壁の入力が持つ。
+    """
+
+    # 方位（真上・真下を向いた面は TOP・BOTTOM）
+    direction: Direction
+
+    # 傾斜角, 度（0：上向きの水平、90：垂直、180：下向きの水平）
+    angle: float
+
+    # 地面の日射反射率（アルベド）, -
+    albedo: float
+
+    # 外表面の日射吸収率, -
+    absorptance: float
+
+    # 外表面の長波長放射率, -
+    emissivity: float
+
+    # 風速を求める評価高さ, m
+    eva_height: float
+
+    def __post_init__(self):
+        """作るときに値を確かめる。"""
+
+        # 方位が Direction でなければエラー（dict から作るときは from_dict で文字列から直す）
+        if not isinstance(self.direction, Direction):
+            raise ValueError(f'方位 direction は Direction にしてください（{self.direction!r}）。')
+
+        # 傾斜角が方位と合っていなければエラー
+        # 真上を向いた面（TOP）は 0、真下を向いた面（BOTTOM）は 180、それ以外は 0 より大きく 180 より小さい
+        if self.direction == Direction.TOP:
+            if self.angle != 0.0:
+                raise ValueError(f'方位が top のとき、傾斜角 angle は 0 にしてください（{self.angle}）。')
+        elif self.direction == Direction.BOTTOM:
+            if self.angle != 180.0:
+                raise ValueError(f'方位が bottom のとき、傾斜角 angle は 180 にしてください（{self.angle}）。')
+        else:
+            if not 0.0 < self.angle < 180.0:
+                raise ValueError(f'方位が {self.direction.value} のとき、傾斜角 angle は 0 より大きく 180 より小さくしてください（{self.angle}）。'
+                                 '水平な面は方位 top・bottom で表します。')
+
+        # アルベド・日射吸収率・放射率が 0 以上 1 以下でなければエラー
+        for key in ('albedo', 'absorptance', 'emissivity'):
+            value = getattr(self, key)
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f'{key} は 0 以上 1 以下にしてください（{value}）。')
+
+        # 評価高さが 0 より大きくなければエラー
+        if not self.eva_height > 0.0:
+            raise ValueError(f'評価高さ eva_height は 0 より大きくしてください（{self.eva_height}）。')
+
+    @classmethod
+    def from_dict(cls, d: dict) -> 'SurfaceInput':
+        """dict から作る。方位は文字列（'s'・'sw'・'w'・'nw'・'n'・'ne'・'e'・'se'・'top'・'bottom'）で受け取る。
+
+        Args:
+            d: {'direction', 'angle', 'albedo', 'absorptance', 'emissivity', 'eva_height'}（すべて必ず指定する）
+        """
+
+        _check_keys(d, _SURFACE_KEYS, where='外表面の入力')
+
+        # 方位の文字列を Direction に直す。どれにも当たらなければエラー
+        try:
+            direction = Direction(d['direction'])
+        except ValueError:
+            raise ValueError(f"方位 direction は {[x.value for x in Direction]} のどれかにしてください（{d['direction']!r}）。") from None
+
+        return cls(direction=direction, **{k: d[k] for k in _SURFACE_KEYS if k != 'direction'})

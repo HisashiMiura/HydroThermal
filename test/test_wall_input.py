@@ -2,7 +2,8 @@ import dataclasses
 
 import pytest
 
-from modules.wall_input import MaterialLayerInput, AirLayerInput, layer_input_from_dict, InterfaceInput
+from modules.direction import Direction
+from modules.wall_input import MaterialLayerInput, AirLayerInput, layer_input_from_dict, InterfaceInput, SurfaceInput
 
 
 def _material_layer() -> MaterialLayerInput:
@@ -196,3 +197,59 @@ class TestInterfaceInput:
         d[key] = value
         with pytest.raises(ValueError, match=key):
             InterfaceInput.from_dict(d)
+
+
+def _surface_dict() -> dict:
+    """外表面の正しい入力の dict（東向きの垂直な壁、Fortran の入力の値）。"""
+    return {'direction': 'e', 'angle': 90.0, 'albedo': 0.3, 'absorptance': 0.9, 'emissivity': 0.9, 'eva_height': 4.2}
+
+
+class TestSurfaceInput:
+
+    def test_read(self):
+        surface = SurfaceInput.from_dict(_surface_dict())
+        assert surface.direction == Direction.E
+        assert (surface.angle, surface.albedo, surface.absorptance, surface.emissivity, surface.eva_height) == (90.0, 0.3, 0.9, 0.9, 4.2)
+
+    def test_frozen(self):
+        surface = SurfaceInput.from_dict(_surface_dict())
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            surface.angle = 45.0
+
+    @pytest.mark.parametrize('direction, angle', [('top', 0.0), ('bottom', 180.0), ('s', 30.0)])
+    def test_direction_angle(self, direction, angle):
+        # 真上・真下を向いた面と、傾いた屋根（南向き 30 度）は作れる
+        d = _surface_dict()
+        d.update(direction=direction, angle=angle)
+        assert SurfaceInput.from_dict(d).angle == angle
+
+    @pytest.mark.parametrize('key', ['direction', 'angle', 'albedo', 'absorptance', 'emissivity', 'eva_height'])
+    def test_missing_key(self, key):
+        d = _surface_dict()
+        del d[key]
+        with pytest.raises(ValueError, match=key):
+            SurfaceInput.from_dict(d)
+
+    def test_unknown_key(self):
+        # 今の InputWall の打ち間違いのキー 'absoption' はエラー
+        d = _surface_dict()
+        d['absoption'] = 0.9
+        with pytest.raises(ValueError, match='absoption'):
+            SurfaceInput.from_dict(d)
+
+    @pytest.mark.parametrize('changes, key', [
+        ({'direction': 'east'}, 'direction'),
+        ({'direction': 'top', 'angle': 90.0}, 'angle'),
+        ({'direction': 'bottom', 'angle': 0.0}, 'angle'),
+        ({'angle': 0.0}, 'angle'),
+        ({'angle': 180.0}, 'angle'),
+        ({'albedo': -0.1}, 'albedo'),
+        ({'absorptance': 1.1}, 'absorptance'),
+        ({'emissivity': -0.1}, 'emissivity'),
+        ({'eva_height': 0.0}, 'eva_height'),
+    ])
+    def test_invalid_value(self, changes, key):
+        d = _surface_dict()
+        d.update(changes)
+        with pytest.raises(ValueError, match=key):
+            SurfaceInput.from_dict(d)
