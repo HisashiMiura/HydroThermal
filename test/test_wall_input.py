@@ -54,3 +54,29 @@ class TestLayerInputFromDict:
         d['thicknes'] = 0.01
         with pytest.raises(ValueError, match='thicknes'):
             LayerInput.from_dict(d)
+
+
+class TestLayerInputValues:
+
+    @pytest.mark.parametrize('key, value', [
+        ('source', 'excel'),
+        ('name', ''),
+        ('thickness', 0.0),
+        ('thickness', -0.01),
+        ('n_div', 1),
+        ('n_div', 2.5),
+        ('n_div', True),
+        ('initial_rh', 0.0),
+        ('initial_rh', 100.0),
+    ])
+    def test_invalid_value(self, key, value):
+        d = _material_layer_dict()
+        d[key] = value
+        with pytest.raises(ValueError, match=key):
+            LayerInput.from_dict(d)
+
+    def test_n_div_2(self):
+        # 分割数 2（両端だけ）は作れる
+        d = _material_layer_dict()
+        d['n_div'] = 2
+        assert LayerInput.from_dict(d).n_div == 2
