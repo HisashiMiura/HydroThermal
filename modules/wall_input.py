@@ -7,6 +7,7 @@
 """
 
 from dataclasses import dataclass
+from typing import Self
 
 from modules.direction import Direction
 from modules.material_loaders import MATERIAL_SOURCES
@@ -23,6 +24,9 @@ _INTERFACE_KEYS = ('cond_h', 'cond_m')
 
 # 外表面の入力の dict のキー（すべて必ず指定する）
 _SURFACE_KEYS = ('direction', 'angle', 'albedo', 'absorptance', 'emissivity', 'eva_height')
+
+# 壁の入力の dict のキー（すべて必ず指定する）
+_WALL_KEYS = ('surface', 'layers', 'interfaces', 'len_vertical', 'len_horizontal', 'height')
 
 
 def _check_keys(d: dict, required: tuple[str, ...], where: str):
@@ -43,6 +47,26 @@ def _check_keys(d: dict, required: tuple[str, ...], where: str):
     unknown = sorted(set(d) - set(required))
     if unknown:
         raise ValueError(f'{where} に知らないキー {unknown} があります（使えるキー: {list(required)}）。')
+
+
+def _from_dict_at(from_dict, d, at: str):
+    """入れ子の入力を from_dict で作る。エラーのときは、どこの入力か（at）をメッセージの頭に付ける。
+
+    Args:
+        from_dict: 部品を dict から作る関数（SurfaceInput.from_dict など）
+        d: 入力の dict
+        at: どこの入力か（'layers の 2 番目' など）
+    """
+
+    # dict でなければエラー
+    if not isinstance(d, dict):
+        raise ValueError(f'壁の入力の {at} は dict で書いてください（{type(d).__name__}）。')
+
+    # 部品を作る。エラーなら、どこの入力かを頭に付けて出し直す
+    try:
+        return from_dict(d)
+    except ValueError as e:
+        raise ValueError(f'壁の入力の {at}: {e}') from None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -101,7 +125,7 @@ class MaterialLayerInput:
             raise ValueError(f'初期の相対湿度 initial_rh は 0 より大きく 100 より小さくしてください（{self.initial_rh}）。')
 
     @classmethod
-    def from_dict(cls, d: dict) -> 'MaterialLayerInput':
+    def from_dict(cls, d: dict) -> Self:
         """dict から作る。
 
         Args:
@@ -154,7 +178,7 @@ class AirLayerInput:
             raise ValueError(f'初期の相対湿度 initial_rh は 0 より大きく 100 より小さくしてください（{self.initial_rh}）。')
 
     @classmethod
-    def from_dict(cls, d: dict) -> 'AirLayerInput':
+    def from_dict(cls, d: dict) -> Self:
         """dict から作る。
 
         Args:
@@ -223,7 +247,7 @@ class InterfaceInput:
             raise ValueError(f'湿気コンダクタンス cond_m は 0 より大きくしてください（{self.cond_m}）。')
 
     @classmethod
-    def from_dict(cls, d: dict) -> 'InterfaceInput':
+    def from_dict(cls, d: dict) -> Self:
         """dict から作る。
 
         Args:
@@ -291,7 +315,7 @@ class SurfaceInput:
             raise ValueError(f'評価高さ eva_height は 0 より大きくしてください（{self.eva_height}）。')
 
     @classmethod
-    def from_dict(cls, d: dict) -> 'SurfaceInput':
+    def from_dict(cls, d: dict) -> Self:
         """dict から作る。方位は文字列（'s'・'sw'・'w'・'nw'・'n'・'ne'・'e'・'se'・'top'・'bottom'）で受け取る。
 
         Args:
@@ -382,3 +406,27 @@ class WallInput:
         # 高さが 0 以上でなければエラー（水平な屋根では 0 もありうる）
         if not self.height >= 0.0:
             raise ValueError(f'高さ height は 0 以上にしてください（{self.height}）。')
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Self:
+        """dict から作る。外表面・層・境目は、それぞれの from_dict の形の dict で書く（層・境目はリスト）。
+
+        Args:
+            d: {'surface', 'layers', 'interfaces', 'len_vertical', 'len_horizontal', 'height'}（すべて必ず指定する）
+        """
+
+        _check_keys(d, _WALL_KEYS, where='壁の入力')
+
+        # 層・境目がリスト（またはタプル）でなければエラー
+        for key in ('layers', 'interfaces'):
+            if not isinstance(d[key], (list, tuple)):
+                raise ValueError(f'壁の入力の {key} は、dict のリストで書いてください（{type(d[key]).__name__}）。')
+
+        # 外表面・層・境目を作る。どこでエラーになったかを、メッセージの頭に付ける（番号は外気側から 0, 1, 2, …）
+        surface = _from_dict_at(SurfaceInput.from_dict, d['surface'], at='surface')
+        layers = tuple(_from_dict_at(layer_input_from_dict, x, at=f'layers の {i} 番目') for i, x in enumerate(d['layers']))
+        interfaces = tuple(_from_dict_at(InterfaceInput.from_dict, x, at=f'interfaces の {i} 番目') for i, x in enumerate(d['interfaces']))
+
+        # 境目の数・通気層の位置などは、ここで作るときに __post_init__ で確かめる
+        return cls(surface=surface, layers=layers, interfaces=interfaces,
+                   len_vertical=d['len_vertical'], len_horizontal=d['len_horizontal'], height=d['height'])

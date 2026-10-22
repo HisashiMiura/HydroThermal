@@ -359,3 +359,77 @@ class TestWallInput:
         kwargs[key] = value
         with pytest.raises(ValueError, match=match):
             WallInput(**kwargs)
+
+
+def _wall_dict() -> dict:
+    """壁の正しい入力の dict（_wall_kwargs と同じ壁）。"""
+
+    def m(name, thickness, n_div, temperature, rh):
+        return {'source': 'whamcavity', 'name': name, 'thickness': thickness, 'n_div': n_div,
+                'initial_temperature': temperature, 'initial_rh': rh}
+
+    return {
+        'surface': _surface_dict(),
+        'layers': [
+            m('サイディング', 0.016, 5, 15.0, 50.0),
+            {'air_layer': True, 'thickness': 0.025, 'alpha': 0.085, 'initial_temperature': 15.0, 'initial_rh': 50.0},
+            m('石膏ボード', 0.042, 5, 10.0, 50.0),
+            m('構造用合板1', 0.009, 6, 10.0, 80.0),
+            m('グラスウール1', 0.1, 5, 10.0, 50.0),
+            m('構造用合板1', 0.012, 6, 10.0, 80.0),
+            m('石膏ボード', 0.042, 5, 10.0, 50.0),
+        ],
+        'interfaces': [{'cond_h': h, 'cond_m': w} for h, w in (
+            (22.4, 2.0e-11), (9.2, 3.43e-8), (9.2, 3.43e-8), (50.0, 7.75e-7),
+            (50.0, 7.75e-7), (50.0, 2.0e-11), (50.0, 7.75e-7), (9.2, 2.6e-10),
+        )],
+        'len_vertical': 7.0,
+        'len_horizontal': 0.42,
+        'height': 7.0,
+    }
+
+
+class TestWallInputFromDict:
+
+    def test_read(self):
+        # dict から作ったものと、直接作ったものが同じ
+        assert WallInput.from_dict(_wall_dict()) == WallInput(**_wall_kwargs())
+
+    def test_missing_key(self):
+        d = _wall_dict()
+        del d['height']
+        with pytest.raises(ValueError, match='height'):
+            WallInput.from_dict(d)
+
+    def test_unknown_key(self):
+        d = _wall_dict()
+        d['blank'] = 0.0
+        with pytest.raises(ValueError, match='blank'):
+            WallInput.from_dict(d)
+
+    def test_layers_not_list(self):
+        # 層を dict 1 つだけで書くとエラー
+        d = _wall_dict()
+        d['layers'] = d['layers'][0]
+        with pytest.raises(ValueError, match='layers'):
+            WallInput.from_dict(d)
+
+    def test_error_location(self):
+        # 入れ子の中のエラーには、どこの入力かが付く
+        d = _wall_dict()
+        d['layers'][3]['thickness'] = 0.0
+        with pytest.raises(ValueError, match='layers の 3 番目.*thickness'):
+            WallInput.from_dict(d)
+
+    def test_nested_not_dict(self):
+        d = _wall_dict()
+        d['layers'][2] = '石膏ボード'
+        with pytest.raises(ValueError, match='layers の 2 番目'):
+            WallInput.from_dict(d)
+
+    def test_check_works(self):
+        # 境目が 1 つ足りない dict でもエラー（WallInput の確認が dict からでも働く）
+        d = _wall_dict()
+        d['interfaces'] = d['interfaces'][:-1]
+        with pytest.raises(ValueError, match='interfaces'):
+            WallInput.from_dict(d)
