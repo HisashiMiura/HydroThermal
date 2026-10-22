@@ -4,3 +4,4 @@ __pycache__/
 docs/reference/papers/
 # 材料物性レビューのレポートは Markdown と図だけを入れる（PDF は作らない）
 docs/reference/material_review/*.pdf
+*.egg-info/

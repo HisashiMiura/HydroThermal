@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hydrothermal"
+version = "0.1.0"
+description = "建築外皮の熱・水分同時移動解析（Whamcavity の Python 版）"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "openpyxl",
+]
+
+[project.optional-dependencies]
+# 開発用：テストと、材料物性レビューの図
+dev = [
+    "pytest",
+    "matplotlib",
+]
+
+[tool.setuptools.packages.find]
+include = ["modules*"]
+
+[tool.setuptools.package-data]
+modules = ["*.xlsx"]
