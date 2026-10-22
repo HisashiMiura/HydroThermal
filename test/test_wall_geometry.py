@@ -6,8 +6,8 @@ from modules.material_loaders import load_materials
 from modules.materials import Materials
 from modules.thermo_dynamics import ROW_CP
 from modules import wall_geometry
-from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, material_finder
-from modules.wall_input import MaterialLayerInput, AirLayerInput
+from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, material_finder, Link, Outdoor, Indoor, OUTDOOR, INDOOR
+from modules.wall_input import MaterialLayerInput, AirLayerInput, InterfaceInput
 
 
 def _plywood():
@@ -159,3 +159,76 @@ class TestMaterialFinder:
         find('whamcavity', '構造用合板1')
         find('whamcavity', 'グラスウール1')
         assert calls == ['whamcavity']
+
+
+def _node(name: str, d_left: float, d_right: float, layer_index: int) -> MaterialNode:
+    """旧 Excel の材料の質点。"""
+    return MaterialNode(d_left=d_left, d_right=d_right, material=material_finder()('whamcavity', name), layer_index=layer_index)
+
+
+def _interface(cond_h: float) -> InterfaceInput:
+    """熱コンダクタンス cond_h の境目（湿気は 7.75e-7）。"""
+    return InterfaceInput(cond_h=cond_h, cond_m=7.75e-7)
+
+
+class TestLinkHeat:
+
+    def test_interior(self):
+        # 合板の中の 2 つの質点（左右とも 0.9 mm）：熱抵抗 = 1.8 mm / λ
+        a, b = _node('構造用合板1', 0.0009, 0.0009, 0), _node('構造用合板1', 0.0009, 0.0009, 0)
+        link = Link(left=a, right=b, interface=None)
+        assert link.r_h == pytest.approx(0.0018 / a.material.lambda_h)
+
+    def test_layer_to_layer(self):
+        # 合板の右の端と GW の左の端：境目の 1/50 だけ（1 回だけ入る）
+        a, b = _node('構造用合板1', 0.0009, 0.0, 0), _node('グラスウール1', 0.0, 0.0125, 1)
+        link = Link(left=a, right=b, interface=_interface(50.0))
+        assert link.r_h == pytest.approx(1 / 50.0)
+
+    def test_outside_surface(self):
+        # 外気とサイディングの左の端：外表面の伝達 1/22.4 だけ
+        link = Link(left=OUTDOOR, right=_node('サイディング', 0.0, 0.002, 0), interface=_interface(22.4))
+        assert link.r_h == pytest.approx(1 / 22.4)
+
+    def test_inside_surface(self):
+        # 石膏ボードの右の端と室内：内表面の伝達 1/9.2 だけ
+        link = Link(left=_node('石膏ボード', 0.00525, 0.0, 6), right=INDOOR, interface=_interface(9.2))
+        assert link.r_h == pytest.approx(1 / 9.2)
+
+    def test_air_layer(self):
+        # サイディングの右の端と空気の質点：通気層の中の伝達 1/9.2 だけ
+        air = AirNode(thickness=0.025, alpha=0.085, layer_index=1)
+        link = Link(left=_node('サイディング', 0.002, 0.0, 0), right=air, interface=_interface(9.2))
+        assert link.r_h == pytest.approx(1 / 9.2)
+
+    def test_outdoor_indoor_resistance(self):
+        # 外気・室内は質点ではないので、端までの抵抗は 0
+        assert (OUTDOOR.r_h_right, INDOOR.r_h_left) == (0.0, 0.0)
+        assert OUTDOOR == Outdoor() and INDOOR == Indoor()
+
+    def test_indoor_on_left(self):
+        with pytest.raises(ValueError, match='left'):
+            Link(left=INDOOR, right=_node('サイディング', 0.0, 0.002, 0), interface=_interface(22.4))
+
+    def test_outdoor_on_right(self):
+        with pytest.raises(ValueError, match='right'):
+            Link(left=_node('石膏ボード', 0.00525, 0.0, 6), right=OUTDOOR, interface=_interface(9.2))
+
+    def test_surface_without_interface(self):
+        with pytest.raises(ValueError, match='表面の伝達'):
+            Link(left=OUTDOOR, right=_node('サイディング', 0.0, 0.002, 0), interface=None)
+
+    def test_same_layer_with_interface(self):
+        a, b = _node('構造用合板1', 0.0009, 0.0009, 0), _node('構造用合板1', 0.0009, 0.0009, 0)
+        with pytest.raises(ValueError, match='同じ層'):
+            Link(left=a, right=b, interface=_interface(50.0))
+
+    def test_different_layers_without_interface(self):
+        a, b = _node('構造用合板1', 0.0009, 0.0, 0), _node('グラスウール1', 0.0, 0.0125, 1)
+        with pytest.raises(ValueError, match='間のつながり'):
+            Link(left=a, right=b, interface=None)
+
+    def test_frozen(self):
+        link = Link(left=OUTDOOR, right=_node('サイディング', 0.0, 0.002, 0), interface=_interface(22.4))
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            link.interface = None

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from modules.material_loaders import load_materials
 from modules.materials import Material, Materials
 from modules.thermo_dynamics import ROW_CP
-from modules.wall_input import AirLayerInput, LayerInput
+from modules.wall_input import AirLayerInput, InterfaceInput, LayerInput
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -118,6 +118,91 @@ class AirNode:
 
 # 質点：材料の質点か空気の質点のどちらか
 Node = MaterialNode | AirNode
+
+
+@dataclass(frozen=True)
+class Outdoor:
+    """外気。つながりの左（外気側）の端になる。
+
+    質点ではないので、端までの抵抗は 0（外表面の伝達は、つながりの境目が持つ）。
+    外気の温度・湿度は、時刻ごとの境界条件から取り出す（段階 6）。
+    """
+
+    @property
+    def r_h_right(self) -> float:
+        """右の端までの熱抵抗, (m2 K)/W（質点ではないので 0）"""
+        return 0.0
+
+
+@dataclass(frozen=True)
+class Indoor:
+    """室内。つながりの右（室内側）の端になる。
+
+    質点ではないので、端までの抵抗は 0（内表面の伝達は、つながりの境目が持つ）。
+    室内の温度・湿度は、時刻ごとの境界条件から取り出す（段階 6）。
+    """
+
+    @property
+    def r_h_left(self) -> float:
+        """左の端までの熱抵抗, (m2 K)/W（質点ではないので 0）"""
+        return 0.0
+
+
+# 外気と室内（値を持たないので、1 つずつ作って使い回す）
+OUTDOOR = Outdoor()
+INDOOR = Indoor()
+
+
+@dataclass(frozen=True, kw_only=True)
+class Link:
+    """つながり：隣り合う 2 つの質点、または端の質点と外気・室内の間。
+
+    抵抗 = 左から右の端までの抵抗 + 境目の抵抗 + 右から左の端までの抵抗。
+    層の中のつながりは境目を持たない。層と層・材料と通気層・表面のつながりは、境目（InterfaceInput）を持つ。
+    """
+
+    # 左（外気側）：質点か外気
+    left: Node | Outdoor
+
+    # 右（室内側）：質点か室内
+    right: Node | Indoor
+
+    # 境目の入力。層の中のつながりは None
+    interface: InterfaceInput | None
+
+    def __post_init__(self):
+        """作るときに、つながりの形を確かめる。"""
+
+        # 左が質点か外気でなければエラー（室内を左に置くことはできない）
+        if not isinstance(self.left, (MaterialNode, AirNode, Outdoor)):
+            raise ValueError(f'つながりの左 left は、質点か外気にしてください（{type(self.left).__name__}）。')
+
+        # 右が質点か室内でなければエラー（外気を右に置くことはできない）
+        if not isinstance(self.right, (MaterialNode, AirNode, Indoor)):
+            raise ValueError(f'つながりの右 right は、質点か室内にしてください（{type(self.right).__name__}）。')
+
+        # 外気・室内に面するつながりに境目がなければエラー（表面の伝達を境目で表すため）
+        if isinstance(self.left, Outdoor) or isinstance(self.right, Indoor):
+            if self.interface is None:
+                raise ValueError('外気・室内に面するつながりには、境目 interface（表面の伝達）が必要です。')
+            return
+
+        # 左右がどちらも質点のとき、同じ層なら境目なし、違う層なら境目ありでなければエラー
+        same_layer = self.left.layer_index == self.right.layer_index
+        if same_layer and self.interface is not None:
+            raise ValueError(f'同じ層（{self.left.layer_index} 番目）の中のつながりに、境目 interface は指定できません。')
+        if not same_layer and self.interface is None:
+            raise ValueError(f'層 {self.left.layer_index} 番目と {self.right.layer_index} 番目の間のつながりには、境目 interface が必要です。')
+
+    @property
+    def r_h(self) -> float:
+        """熱抵抗, (m2 K)/W"""
+
+        # 境目の熱抵抗（層の中なら 0）
+        r_interface = 1.0 / self.interface.cond_h if self.interface is not None else 0.0
+
+        # 左から右の端まで ＋ 境目 ＋ 右から左の端まで（外気・室内・空気の質点の分は 0）
+        return self.left.r_h_right + r_interface + self.right.r_h_left
 
 
 # 材料を探す関数：(出どころ, 名称) → 材料
