@@ -3,7 +3,7 @@ import dataclasses
 import pytest
 
 from modules.direction import Direction
-from modules.wall_input import MaterialLayerInput, AirLayerInput, layer_input_from_dict, InterfaceInput, SurfaceInput
+from modules.wall_input import MaterialLayerInput, AirLayerInput, layer_input_from_dict, InterfaceInput, SurfaceInput, WallInput
 
 
 def _material_layer() -> MaterialLayerInput:
@@ -253,3 +253,109 @@ class TestSurfaceInput:
         d.update(changes)
         with pytest.raises(ValueError, match=key):
             SurfaceInput.from_dict(d)
+
+
+def _wall_kwargs() -> dict:
+    """壁の正しい入力の値（今の main.py・Fortran の入力の壁 7 層、境目 8 個）。"""
+
+    def m(name, thickness, n_div, temperature, rh):
+        return MaterialLayerInput(source='whamcavity', name=name, thickness=thickness, n_div=n_div,
+                                  initial_temperature=temperature, initial_rh=rh)
+
+    layers = (
+        m('サイディング', 0.016, 5, 15.0, 50.0),
+        AirLayerInput(thickness=0.025, alpha=0.085, initial_temperature=15.0, initial_rh=50.0),
+        m('石膏ボード', 0.042, 5, 10.0, 50.0),
+        m('構造用合板1', 0.009, 6, 10.0, 80.0),
+        m('グラスウール1', 0.1, 5, 10.0, 50.0),
+        m('構造用合板1', 0.012, 6, 10.0, 80.0),
+        m('石膏ボード', 0.042, 5, 10.0, 50.0),
+    )
+    interfaces = tuple(InterfaceInput(cond_h=h, cond_m=w) for h, w in (
+        (22.4, 2.0e-11), (9.2, 3.43e-8), (9.2, 3.43e-8), (50.0, 7.75e-7),
+        (50.0, 7.75e-7), (50.0, 2.0e-11), (50.0, 7.75e-7), (9.2, 2.6e-10),
+    ))
+    return dict(surface=SurfaceInput.from_dict(_surface_dict()), layers=layers, interfaces=interfaces,
+                len_vertical=7.0, len_horizontal=0.42, height=7.0)
+
+
+class TestWallInput:
+
+    def test_values(self):
+        wall = WallInput(**_wall_kwargs())
+        assert (len(wall.layers), len(wall.interfaces)) == (7, 8)
+        assert isinstance(wall.layers[1], AirLayerInput)
+        assert (wall.len_vertical, wall.len_horizontal, wall.height) == (7.0, 0.42, 7.0)
+
+    def test_frozen(self):
+        wall = WallInput(**_wall_kwargs())
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            wall.height = 3.0
+
+    def test_height_0(self):
+        # 高さ 0（水平な屋根）は作れる
+        kwargs = _wall_kwargs()
+        kwargs['height'] = 0.0
+        assert WallInput(**kwargs).height == 0.0
+
+    def test_list_not_allowed(self):
+        # 層・境目をリストで渡すとエラー（タプルで渡す）
+        kwargs = _wall_kwargs()
+        kwargs['layers'] = list(kwargs['layers'])
+        with pytest.raises(ValueError, match='タプル'):
+            WallInput(**kwargs)
+
+    def test_no_layer(self):
+        kwargs = _wall_kwargs()
+        kwargs.update(layers=(), interfaces=(kwargs['interfaces'][0],))
+        with pytest.raises(ValueError, match='1 枚も'):
+            WallInput(**kwargs)
+
+    def test_number_of_interfaces(self):
+        # 境目が 1 つ足りない
+        kwargs = _wall_kwargs()
+        kwargs['interfaces'] = kwargs['interfaces'][:-1]
+        with pytest.raises(ValueError, match='層の数 \\+ 1'):
+            WallInput(**kwargs)
+
+    @pytest.mark.parametrize('index', [0, -1])
+    def test_air_layer_at_surface(self, index):
+        # いちばん外側・いちばん内側に通気層を置くとエラー
+        kwargs = _wall_kwargs()
+        layers = list(kwargs['layers'])
+        layers[index] = kwargs['layers'][1]
+        kwargs['layers'] = tuple(layers)
+        with pytest.raises(ValueError, match='いちばん外側'):
+            WallInput(**kwargs)
+
+    def test_air_layers_in_a_row(self):
+        # 通気層が 2 枚続くとエラー（2 番目の層を通気層に替える）
+        kwargs = _wall_kwargs()
+        layers = list(kwargs['layers'])
+        layers[2] = kwargs['layers'][1]
+        kwargs['layers'] = tuple(layers)
+        with pytest.raises(ValueError, match='どちらも通気層'):
+            WallInput(**kwargs)
+
+    @pytest.mark.parametrize('key, value', [
+        ('len_vertical', 0.0),
+        ('len_horizontal', -1.0),
+        ('height', -1.0),
+    ])
+    def test_invalid_value(self, key, value):
+        kwargs = _wall_kwargs()
+        kwargs[key] = value
+        with pytest.raises(ValueError, match=key):
+            WallInput(**kwargs)
+
+    @pytest.mark.parametrize('key, value, match', [
+        ('surface', {'direction': 'e'}, 'surface'),
+        ('layers', ('サイディング',), 'layers'),
+        ('interfaces', ({'cond_h': 9.2, 'cond_m': 3.43e-8},) * 8, 'interfaces'),
+    ])
+    def test_invalid_type(self, key, value, match):
+        # 部品の入力の代わりに dict や文字列を渡すとエラー
+        kwargs = _wall_kwargs()
+        kwargs[key] = value
+        with pytest.raises(ValueError, match=match):
+            WallInput(**kwargs)

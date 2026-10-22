@@ -307,3 +307,78 @@ class SurfaceInput:
             raise ValueError(f"方位 direction は {[x.value for x in Direction]} のどれかにしてください（{d['direction']!r}）。") from None
 
         return cls(direction=direction, **{k: d[k] for k in _SURFACE_KEYS if k != 'direction'})
+
+
+@dataclass(frozen=True, kw_only=True)
+class WallInput:
+    """壁 1 枚分の入力。
+
+    層と境目は外気側から順に並べる。境目は層の数 + 1 個（外気と最初の層、層と層、最後の層と室内）。
+    壁の面積は、使うときに 縦の長さ × 横の長さ で求める。
+    """
+
+    # 外表面
+    surface: SurfaceInput
+
+    # 層（外気側から順）
+    layers: tuple[LayerInput, ...]
+
+    # 境目（外気側から順。層の数 + 1 個）
+    interfaces: tuple[InterfaceInput, ...]
+
+    # 縦の長さ, m
+    len_vertical: float
+
+    # 横の長さ, m
+    len_horizontal: float
+
+    # 壁の下端と上端の高さの差（通気層の浮力換気に使う）, m
+    height: float
+
+    def __post_init__(self):
+        """作るときに値を確かめる。"""
+
+        # 外表面が SurfaceInput でなければエラー
+        if not isinstance(self.surface, SurfaceInput):
+            raise ValueError(f'外表面 surface は SurfaceInput にしてください（{type(self.surface).__name__}）。')
+
+        # 層・境目がタプルでなければエラー（作ったあとに中身を変えられないようにするため）
+        if not isinstance(self.layers, tuple) or not isinstance(self.interfaces, tuple):
+            raise ValueError('層 layers と境目 interfaces はタプルにしてください。')
+
+        # 層が 1 枚もなければエラー
+        if len(self.layers) == 0:
+            raise ValueError('層 layers が 1 枚もありません。')
+
+        # 層が MaterialLayerInput・AirLayerInput のどちらでもなければエラー
+        for i, layer in enumerate(self.layers):
+            if not isinstance(layer, (MaterialLayerInput, AirLayerInput)):
+                raise ValueError(f'層 layers の {i} 番目が層の入力ではありません（{type(layer).__name__}）。')
+
+        # 境目が InterfaceInput でなければエラー
+        for i, interface in enumerate(self.interfaces):
+            if not isinstance(interface, InterfaceInput):
+                raise ValueError(f'境目 interfaces の {i} 番目が境目の入力ではありません（{type(interface).__name__}）。')
+
+        # 境目の数が「層の数 + 1」でなければエラー
+        if len(self.interfaces) != len(self.layers) + 1:
+            raise ValueError(f'境目 interfaces の数は、層の数 + 1（{len(self.layers) + 1}）にしてください（{len(self.interfaces)}）。')
+
+        # いちばん外側・いちばん内側の層が通気層ならエラー（外気・室内に面する表面には材料の質点が要る）
+        if isinstance(self.layers[0], AirLayerInput) or isinstance(self.layers[-1], AirLayerInput):
+            raise ValueError('いちばん外側といちばん内側の層 layers は、材料の層にしてください（通気層は不可）。')
+
+        # 通気層が 2 枚続いていればエラー（1 枚の通気層にまとめる）
+        for i in range(len(self.layers) - 1):
+            if isinstance(self.layers[i], AirLayerInput) and isinstance(self.layers[i + 1], AirLayerInput):
+                raise ValueError(f'層 layers の {i} 番目と {i + 1} 番目が、どちらも通気層です。1 枚の通気層にまとめてください。')
+
+        # 縦・横の長さが 0 より大きくなければエラー
+        for key in ('len_vertical', 'len_horizontal'):
+            value = getattr(self, key)
+            if not value > 0.0:
+                raise ValueError(f'{key} は 0 より大きくしてください（{value}）。')
+
+        # 高さが 0 以上でなければエラー（水平な屋根では 0 もありうる）
+        if not self.height >= 0.0:
+            raise ValueError(f'高さ height は 0 以上にしてください（{self.height}）。')
