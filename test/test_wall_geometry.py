@@ -2,12 +2,13 @@ import dataclasses
 
 import pytest
 
+from modules.direction import Direction
 from modules.material_loaders import load_materials
 from modules.materials import Materials
 from modules.state import State
 from modules.thermo_dynamics import ROW_CP, ATP
 from modules import wall_geometry
-from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, _make_links, material_finder, Link, Interface, Outdoor, Indoor, OUTDOOR, INDOOR
+from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, _make_links, material_finder, Link, Interface, Surface, Outdoor, Indoor, OUTDOOR, INDOOR
 from modules.wall_input import MaterialLayerInput, AirLayerInput, InterfaceInput
 
 
@@ -394,3 +395,16 @@ class TestInterface:
         interface = Interface(r_h=1 / 50.0, r_m=1 / 7.75e-7)
         with pytest.raises(dataclasses.FrozenInstanceError):
             interface.r_h = 0.1
+
+
+class TestSurface:
+
+    def test_values(self):
+        surface = Surface(direction=Direction.E, angle=90.0, albedo=0.3, absorptance=0.9, emissivity=0.9, eva_height=4.2)
+        assert surface.direction == Direction.E
+        assert (surface.angle, surface.albedo, surface.absorptance, surface.emissivity, surface.eva_height) == (90.0, 0.3, 0.9, 0.9, 4.2)
+
+    def test_frozen(self):
+        surface = Surface(direction=Direction.E, angle=90.0, albedo=0.3, absorptance=0.9, emissivity=0.9, eva_height=4.2)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            surface.angle = 45.0

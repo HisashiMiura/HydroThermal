@@ -13,6 +13,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from modules.direction import Direction
 from modules.material_loaders import load_materials
 from modules.materials import Material, Materials
 from modules.state import State
@@ -304,6 +305,34 @@ class Link:
 
         # 層の中（左右とも同じ層の材料の質点）
         return self.left.r_l_right(state_left) + self.right.r_l_left(state_right)
+
+
+@dataclass(frozen=True, kw_only=True)
+class Surface:
+    """計算の側の外表面：向きと、日射・放射・風に関わる性質。
+
+    入力の外表面（wall_input.SurfaceInput）から、WallGeometry.from_input で作る。
+    値は入力で確かめ済みなので、ここでは確かめない。
+    日射量・風速などの計算は、段階 6（境界条件）でここに足す（今の wall_surface.WallSurface から移す）。
+    """
+
+    # 方位（真上・真下を向いた面は TOP・BOTTOM）
+    direction: Direction
+
+    # 傾斜角, 度（0：上向きの水平、90：垂直、180：下向きの水平）
+    angle: float
+
+    # 地面の日射反射率（アルベド）, -
+    albedo: float
+
+    # 外表面の日射吸収率, -
+    absorptance: float
+
+    # 外表面の長波長放射率, -
+    emissivity: float
+
+    # 風速を求める評価高さ, m
+    eva_height: float
 
 
 # 材料を探す関数：(出どころ, 名称) → 材料
