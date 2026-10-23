@@ -198,11 +198,35 @@ INDOOR = Indoor()
 
 
 @dataclass(frozen=True, kw_only=True)
+class Interface:
+    """計算の側の境目：表面の伝達、層と層の接触、材料と通気層の間の伝達、塗膜・防湿層などの抵抗。
+
+    入力の境目（wall_input.InterfaceInput、コンダクタンス）から、_make_links で作る。
+    境目では液水は移動しない。
+    """
+
+    # 熱抵抗, (m2 K)/W
+    r_h: float
+
+    # 透湿抵抗, (m2 s Pa)/kg
+    r_m: float
+
+    def __post_init__(self):
+        """作るときに値を確かめる。"""
+
+        # 熱抵抗・透湿抵抗が 0 より大きくなければエラー
+        for key in ('r_h', 'r_m'):
+            value = getattr(self, key)
+            if not value > 0.0:
+                raise ValueError(f'境目の {key} は 0 より大きくしてください（{value}）。')
+
+
+@dataclass(frozen=True, kw_only=True)
 class Link:
     """つながり：隣り合う 2 つの質点、または端の質点と外気・室内の間。
 
     抵抗 = 左から右の端までの抵抗 + 境目の抵抗 + 右から左の端までの抵抗。
-    層の中のつながりは境目を持たない。層と層・材料と通気層・表面のつながりは、境目（InterfaceInput）を持つ。
+    層の中のつながりは境目を持たない。層と層・材料と通気層・表面のつながりは、境目（Interface）を持つ。
     """
 
     # 左（外気側）：質点か外気
@@ -211,8 +235,8 @@ class Link:
     # 右（室内側）：質点か室内
     right: Node | Indoor
 
-    # 境目の入力。層の中のつながりは None
-    interface: InterfaceInput | None
+    # 境目。層の中のつながりは None（境目がない）
+    interface: Interface | None
 
     def __post_init__(self):
         """作るときに、つながりの形を確かめる。"""
@@ -243,7 +267,7 @@ class Link:
         """熱抵抗, (m2 K)/W"""
 
         # 境目の熱抵抗（層の中なら 0）
-        r_interface = 1.0 / self.interface.cond_h if self.interface is not None else 0.0
+        r_interface = self.interface.r_h if self.interface is not None else 0.0
 
         # 左から右の端まで ＋ 境目 ＋ 右から左の端まで（外気・室内・空気の質点の分は 0）
         return self.left.r_h_right + r_interface + self.right.r_h_left
@@ -259,7 +283,7 @@ class Link:
         """
 
         # 境目の透湿抵抗（層の中なら 0）
-        r_interface = 1.0 / self.interface.cond_m if self.interface is not None else 0.0
+        r_interface = self.interface.r_m if self.interface is not None else 0.0
 
         # 左から右の端まで ＋ 境目 ＋ 右から左の端まで（外気・室内・空気の質点の分は 0）
         return self.left.r_m_right(state_left) + r_interface + self.right.r_m_left(state_right)
@@ -361,21 +385,24 @@ def _make_links(nodes: tuple[Node, ...], interfaces: tuple[InterfaceInput, ...])
 
     Args:
         nodes: 質点の並び（_make_nodes で作ったもの）
-        interfaces: 境目の並び（WallInput.interfaces。層の数 + 1 個）
+        interfaces: 入力の境目の並び（WallInput.interfaces。層の数 + 1 個）。計算の側の境目（Interface）に変えて使う
     """
 
+    # 入力の境目（コンダクタンス）を、計算の側の境目（抵抗）に変える
+    ifs = [Interface(r_h=1.0 / x.cond_h, r_m=1.0 / x.cond_m) for x in interfaces]
+
     # 外気と最初の質点（外表面）
-    links = [Link(left=OUTDOOR, right=nodes[0], interface=interfaces[0])]
+    links = [Link(left=OUTDOOR, right=nodes[0], interface=ifs[0])]
 
     # 隣り合う質点どうし（0 番目と 1 番目、1 番目と 2 番目、…）
     for left, right in zip(nodes[:-1], nodes[1:]):
 
-        # 同じ層の中なら境目なし、層が変わるところなら右の層の手前の境目（層 i と層 i + 1 の間は interfaces[i + 1]）
-        interface = None if left.layer_index == right.layer_index else interfaces[right.layer_index]
+        # 同じ層の中なら境目なし、層が変わるところなら右の層の手前の境目（層 i と層 i + 1 の間は ifs[i + 1]）
+        interface = None if left.layer_index == right.layer_index else ifs[right.layer_index]
 
         links.append(Link(left=left, right=right, interface=interface))
 
     # 最後の質点と室内（内表面）
-    links.append(Link(left=nodes[-1], right=INDOOR, interface=interfaces[-1]))
+    links.append(Link(left=nodes[-1], right=INDOOR, interface=ifs[-1]))
 
     return tuple(links)

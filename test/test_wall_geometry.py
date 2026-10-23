@@ -7,7 +7,7 @@ from modules.materials import Materials
 from modules.state import State
 from modules.thermo_dynamics import ROW_CP, ATP
 from modules import wall_geometry
-from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, _make_links, material_finder, Link, Outdoor, Indoor, OUTDOOR, INDOOR
+from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, _make_links, material_finder, Link, Interface, Outdoor, Indoor, OUTDOOR, INDOOR
 from modules.wall_input import MaterialLayerInput, AirLayerInput, InterfaceInput
 
 
@@ -167,8 +167,13 @@ def _node(name: str, d_left: float, d_right: float, layer_index: int) -> Materia
     return MaterialNode(d_left=d_left, d_right=d_right, material=material_finder()('whamcavity', name), layer_index=layer_index)
 
 
-def _interface(cond_h: float) -> InterfaceInput:
-    """熱コンダクタンス cond_h の境目（湿気は 7.75e-7）。"""
+def _interface(cond_h: float) -> Interface:
+    """熱コンダクタンス cond_h の境目（湿気は 7.75e-7）。計算の側の境目なので抵抗で持つ。"""
+    return Interface(r_h=1.0 / cond_h, r_m=1.0 / 7.75e-7)
+
+
+def _interface_input(cond_h: float) -> InterfaceInput:
+    """熱コンダクタンス cond_h の入力の境目（湿気は 7.75e-7）。_make_links に渡す。"""
     return InterfaceInput(cond_h=cond_h, cond_m=7.75e-7)
 
 
@@ -253,7 +258,7 @@ class TestMakeLinks:
     def test_one_layer_total(self):
         # 合板 9 mm・分割数 6：つながり 7 個、熱抵抗の合計 = 1/22.4 + 0.009/λ + 1/9.2
         nodes = _make_nodes((_layer('構造用合板1', 0.009, 6),), find_material=material_finder())
-        links = _make_links(nodes, (_interface(22.4), _interface(9.2)))
+        links = _make_links(nodes, (_interface_input(22.4), _interface_input(9.2)))
         assert len(links) == 7
         assert sum(l.r_h for l in links) == pytest.approx(1 / 22.4 + 0.009 / _lambda('構造用合板1') + 1 / 9.2)
 
@@ -261,7 +266,7 @@ class TestMakeLinks:
         # 合板 9 mm + GW 100 mm、接触 50：接触抵抗 1/50 が 1 回だけ入る
         layers = (_layer('構造用合板1', 0.009, 6), _layer('グラスウール1', 0.1, 5))
         nodes = _make_nodes(layers, find_material=material_finder())
-        links = _make_links(nodes, (_interface(22.4), _interface(50.0), _interface(9.2)))
+        links = _make_links(nodes, (_interface_input(22.4), _interface_input(50.0), _interface_input(9.2)))
         expected = 1 / 22.4 + 0.009 / _lambda('構造用合板1') + 1 / 50.0 + 0.1 / _lambda('グラスウール1') + 1 / 9.2
         assert sum(l.r_h for l in links) == pytest.approx(expected)
 
@@ -269,7 +274,7 @@ class TestMakeLinks:
         # サイディング + 通気層 + 石膏ボード：通気層の両側は 1/9.2、空気の中の抵抗は 0
         layers = (_layer('サイディング', 0.016, 5), _air_layer(), _layer('石膏ボード', 0.042, 5))
         nodes = _make_nodes(layers, find_material=material_finder())
-        links = _make_links(nodes, (_interface(22.4), _interface(9.2), _interface(9.2), _interface(9.2)))
+        links = _make_links(nodes, (_interface_input(22.4), _interface_input(9.2), _interface_input(9.2), _interface_input(9.2)))
         expected = 1 / 22.4 + 0.016 / _lambda('サイディング') + 1 / 9.2 + 1 / 9.2 + 0.042 / _lambda('石膏ボード') + 1 / 9.2
         assert sum(l.r_h for l in links) == pytest.approx(expected)
 
@@ -279,13 +284,12 @@ class TestMakeLinks:
         assert len(_make_links(nodes, _main_wall_interfaces())) == 34
 
     def test_each_interface_used_once(self):
-        # 境目を持つつながりは 8 個で、境目の 8 個が外気側から順にちょうど 1 回ずつ使われる
+        # 境目を持つつながりは 8 個で、入力の境目の 8 個が外気側から順に 1 回ずつ、抵抗（1 / コンダクタンス）に変えて使われる
         interfaces = _main_wall_interfaces()
         nodes = _make_nodes(_main_wall_layers(), find_material=material_finder())
         used = [l.interface for l in _make_links(nodes, interfaces) if l.interface is not None]
-        # 値が同じ境目（9.2・3.43e-8 など）を区別するため、同じものかどうか（is）で比べる
         assert len(used) == 8
-        assert all(u is i for u, i in zip(used, interfaces))
+        assert [(u.r_h, u.r_m) for u in used] == pytest.approx([(1 / x.cond_h, 1 / x.cond_m) for x in interfaces])
 
     def test_order(self):
         # k 番目のつながりは、質点 k - 1 と質点 k の間。両端は外気と室内
@@ -302,9 +306,9 @@ def _state(rh: float) -> State:
     return State.init(t=20.0 + ATP, rh=rh)
 
 
-def _interface_m(cond_m: float) -> InterfaceInput:
-    """湿気コンダクタンス cond_m の境目（熱は 50）。"""
-    return InterfaceInput(cond_h=50.0, cond_m=cond_m)
+def _interface_m(cond_m: float) -> Interface:
+    """湿気コンダクタンス cond_m の境目（熱は 50）。計算の側の境目なので抵抗で持つ。"""
+    return Interface(r_h=1.0 / 50.0, r_m=1.0 / cond_m)
 
 
 class TestLinkMoisture:
@@ -373,3 +377,20 @@ class TestLinkLiquid:
         lambda_l = a.material.get_lambda_dsh_mu_l(rh=s.rh, t=s.t)
         assert lambda_l > 0.0
         assert link.r_l(s, s) == pytest.approx(0.0018 / lambda_l)
+
+
+class TestInterface:
+
+    def test_values(self):
+        interface = Interface(r_h=1 / 50.0, r_m=1 / 7.75e-7)
+        assert (interface.r_h, interface.r_m) == (1 / 50.0, 1 / 7.75e-7)
+
+    @pytest.mark.parametrize('r_h, r_m, key', [(0.0, 1.0e6, 'r_h'), (0.02, -1.0, 'r_m')])
+    def test_invalid_value(self, r_h, r_m, key):
+        with pytest.raises(ValueError, match=key):
+            Interface(r_h=r_h, r_m=r_m)
+
+    def test_frozen(self):
+        interface = Interface(r_h=1 / 50.0, r_m=1 / 7.75e-7)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            interface.r_h = 0.1
