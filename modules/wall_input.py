@@ -344,10 +344,10 @@ class WallInput:
     # 外表面
     surface: SurfaceInput
 
-    # 層（外気側から順）
+    # 層（外気側から順、添え字 l）
     layers: tuple[LayerInput, ...]
 
-    # 境目（外気側から順。層の数 + 1 個）
+    # 境目（外気側から順。層の数 + 1 個。境目 l は層 l - 1 と層 l の間）
     interfaces: tuple[InterfaceInput, ...]
 
     # 縦の長さ, m
