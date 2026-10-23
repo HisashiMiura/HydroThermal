@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from modules.balance import heat_flow_ks
+from modules.balance import heat_flow_ks, heat_residual_is
 from modules.thermo_dynamics import ATP
 from modules.wall_geometry import WallGeometry
 from modules.wall_input import WallInput
@@ -56,3 +56,52 @@ class TestHeatFlow:
         g = _one_layer_geometry()
         q_ks = heat_flow_ks(g, np.full(len(g.nodes), 293.15), t_outdoor=293.15, t_indoor=293.15)
         assert len(q_ks) == len(g.links) == len(g.nodes) + 1
+
+
+def _steady_t_is(g: WallGeometry, t_outdoor: float, t_indoor: float) -> np.ndarray:
+    """定常の温度分布（熱抵抗に比例した直線）, K, [i]。"""
+    r_h_ks = np.array([link.r_h for link in g.links])
+    q = (t_outdoor - t_indoor) / r_h_ks.sum()
+    return t_outdoor - q * np.cumsum(r_h_ks)[:-1]
+
+
+class TestHeatResidual:
+
+    def test_steady(self):
+        # 定常の温度分布を前の時刻と次の時刻の両方に入れると、残差は 0（たまる量も、正味の熱も 0）
+        g = _one_layer_geometry()
+        t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
+        t_is = _steady_t_is(g, t_outdoor, t_indoor)
+        res_is = heat_residual_is(g, t_is, t_is, dt=180.0, t_outdoor=t_outdoor, t_indoor=t_indoor)
+        np.testing.assert_allclose(res_is, 0.0, atol=1e-9)
+
+    def test_uniform(self):
+        # すべて 20 deg.C のままなら、残差は 0
+        g = _one_layer_geometry()
+        t = 20.0 + ATP
+        t_is = np.full(len(g.nodes), t)
+        res_is = heat_residual_is(g, t_is, t_is, dt=180.0, t_outdoor=t, t_indoor=t)
+        np.testing.assert_allclose(res_is, 0.0)
+
+    def test_storage_only(self):
+        # 次の時刻はすべて 21 deg.C、前の時刻は 20 deg.C：熱は流れず、残差 = C_i × 1 K / Δt
+        g = _one_layer_geometry()
+        dt = 180.0
+        t_n_is = np.full(len(g.nodes), 20.0 + ATP)
+        t_is = t_n_is + 1.0
+        res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, t_outdoor=21.0 + ATP, t_indoor=21.0 + ATP)
+        c_is = np.array([node.heat_capacity for node in g.nodes])
+        np.testing.assert_allclose(res_is, c_is * 1.0 / dt)
+
+    def test_conservation(self):
+        # 残差の合計 = たまる量の合計 -（外気から入る熱 q_0 - 室内へ出る熱 q_N）。中のつながりの熱は打ち消し合う
+        g = _one_layer_geometry()
+        dt = 180.0
+        t_n_is = np.linspace(5.0, 15.0, len(g.nodes)) + ATP
+        t_is = np.linspace(6.0, 18.0, len(g.nodes)) + ATP
+        t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
+        res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, t_outdoor=t_outdoor, t_indoor=t_indoor)
+        c_is = np.array([node.heat_capacity for node in g.nodes])
+        q_ks = heat_flow_ks(g, t_is, t_outdoor=t_outdoor, t_indoor=t_indoor)
+        storage = (c_is * (t_is - t_n_is) / dt).sum()
+        assert res_is.sum() == pytest.approx(storage - (q_ks[0] - q_ks[-1]))
