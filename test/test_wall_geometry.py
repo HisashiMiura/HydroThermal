@@ -8,8 +8,8 @@ from modules.materials import Materials
 from modules.state import State
 from modules.thermo_dynamics import ROW_CP, ATP
 from modules import wall_geometry
-from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, _make_links, material_finder, Link, Interface, Surface, Outdoor, Indoor, OUTDOOR, INDOOR
-from modules.wall_input import MaterialLayerInput, AirLayerInput, InterfaceInput
+from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, _make_links, material_finder, Link, Interface, Surface, WallGeometry, Outdoor, Indoor, OUTDOOR, INDOOR
+from modules.wall_input import MaterialLayerInput, AirLayerInput, InterfaceInput, WallInput
 
 
 def _plywood():
@@ -408,3 +408,94 @@ class TestSurface:
         surface = Surface(direction=Direction.E, angle=90.0, albedo=0.3, absorptance=0.9, emissivity=0.9, eva_height=4.2)
         with pytest.raises(dataclasses.FrozenInstanceError):
             surface.angle = 45.0
+
+
+def _main_wall_dict() -> dict:
+    """今の main.py・Fortran の入力の壁の dict（test_wall_input.py の _wall_dict と同じ壁）。"""
+
+    def m(name, thickness, n_div, temperature, rh):
+        return {'source': 'whamcavity', 'name': name, 'thickness': thickness, 'n_div': n_div,
+                'initial_temperature': temperature, 'initial_rh': rh}
+
+    return {
+        'surface': {'direction': 'e', 'angle': 90.0, 'albedo': 0.3, 'absorptance': 0.9, 'emissivity': 0.9, 'eva_height': 4.2},
+        'layers': [
+            m('サイディング', 0.016, 5, 15.0, 50.0),
+            {'air_layer': True, 'thickness': 0.025, 'alpha': 0.085, 'initial_temperature': 15.0, 'initial_rh': 50.0},
+            m('石膏ボード', 0.042, 5, 10.0, 50.0),
+            m('構造用合板1', 0.009, 6, 10.0, 80.0),
+            m('グラスウール1', 0.1, 5, 10.0, 50.0),
+            m('構造用合板1', 0.012, 6, 10.0, 80.0),
+            m('石膏ボード', 0.042, 5, 10.0, 50.0),
+        ],
+        'interfaces': [{'cond_h': h, 'cond_m': w} for h, w in (
+            (22.4, 2.0e-11), (9.2, 3.43e-8), (9.2, 3.43e-8), (50.0, 7.75e-7),
+            (50.0, 7.75e-7), (50.0, 2.0e-11), (50.0, 7.75e-7), (9.2, 2.6e-10),
+        )],
+        'len_vertical': 7.0,
+        'len_horizontal': 0.42,
+        'height': 7.0,
+    }
+
+
+def _main_wall_geometry() -> WallGeometry:
+    return WallGeometry.from_input(WallInput.from_dict(_main_wall_dict()))
+
+
+class TestWallGeometry:
+
+    def test_main_wall(self):
+        # 今の壁 7 層：質点 33 個、つながり 34 個
+        g = _main_wall_geometry()
+        assert (len(g.nodes), len(g.links)) == (33, 34)
+
+    def test_total_r_h(self):
+        # 熱抵抗の合計 = 外表面 + 各層の d/λ + 通気層の両側 + 接触 4 か所 + 内表面
+        g = _main_wall_geometry()
+        layers = [('サイディング', 0.016), ('石膏ボード', 0.042), ('構造用合板1', 0.009),
+                  ('グラスウール1', 0.1), ('構造用合板1', 0.012), ('石膏ボード', 0.042)]
+        expected = 1 / 22.4 + sum(d / _lambda(name) for name, d in layers) + 2 / 9.2 + 4 / 50.0 + 1 / 9.2
+        assert sum(l.r_h for l in g.links) == pytest.approx(expected)
+
+    def test_area(self):
+        assert _main_wall_geometry().area == pytest.approx(7.0 * 0.42)
+
+    def test_copied_values(self):
+        # 外表面と壁の大きさが、入力と同じ値で写される
+        g = _main_wall_geometry()
+        assert g.surface == Surface(direction=Direction.E, angle=90.0, albedo=0.3, absorptance=0.9, emissivity=0.9, eva_height=4.2)
+        assert (g.len_vertical, g.len_horizontal, g.height) == (7.0, 0.42, 7.0)
+
+    def test_find_material(self):
+        # 材料を探す関数を渡すと、その関数が使われる
+        called = []
+        excel = material_finder()
+
+        def recording_find(source, name):
+            called.append(name)
+            return excel(source, name)
+
+        WallGeometry.from_input(WallInput.from_dict(_main_wall_dict()), find_material=recording_find)
+        assert called == ['サイディング', '石膏ボード', '構造用合板1', 'グラスウール1', '構造用合板1', '石膏ボード']
+
+    def test_material_not_found(self):
+        d = _main_wall_dict()
+        d['layers'][3]['name'] = '構造用合板3'
+        with pytest.raises(ValueError, match='層 3 番目'):
+            WallGeometry.from_input(WallInput.from_dict(d))
+
+    def test_links_too_few(self):
+        # 直接作るときに、つながりが 1 つ足りないとエラー
+        g = _main_wall_geometry()
+        with pytest.raises(ValueError, match='つながりの数'):
+            WallGeometry(nodes=g.nodes, links=g.links[:-1], surface=g.surface,
+                         len_vertical=g.len_vertical, len_horizontal=g.len_horizontal, height=g.height)
+
+    def test_links_wrong_order(self):
+        # 直接作るときに、つながりの順番を入れ替えるとエラー
+        g = _main_wall_geometry()
+        links = list(g.links)
+        links[1], links[2] = links[2], links[1]
+        with pytest.raises(ValueError, match='質点 0 番目'):
+            WallGeometry(nodes=g.nodes, links=tuple(links), surface=g.surface,
+                         len_vertical=g.len_vertical, len_horizontal=g.len_horizontal, height=g.height)

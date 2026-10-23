@@ -12,13 +12,14 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Self
 
 from modules.direction import Direction
 from modules.material_loaders import load_materials
 from modules.materials import Material, Materials
 from modules.state import State
 from modules.thermo_dynamics import ROW_CP
-from modules.wall_input import AirLayerInput, InterfaceInput, LayerInput
+from modules.wall_input import AirLayerInput, InterfaceInput, LayerInput, WallInput
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -435,3 +436,76 @@ def _make_links(nodes: tuple[Node, ...], interfaces: tuple[InterfaceInput, ...])
     links.append(Link(left=nodes[-1], right=INDOOR, interface=ifs[-1]))
 
     return tuple(links)
+
+
+@dataclass(frozen=True, kw_only=True)
+class WallGeometry:
+    """壁の形（時間で変わらないもの）：質点・つながり・外表面・壁の大きさ。
+
+    入口は from_input（壁の入力から作る）。壁の入力そのものは持たない（入力と計算を切り離すため）。
+    質点 k は、つながり k（左）とつながり k + 1（右）の間にある。
+    各層の初期の温湿度は持たない（状態の側で扱う）。
+    """
+
+    # 質点の並び（外気側から順）
+    nodes: tuple[Node, ...]
+
+    # つながりの並び（外気側から順、質点の数 + 1 個）
+    links: tuple[Link, ...]
+
+    # 外表面
+    surface: Surface
+
+    # 縦の長さ, m
+    len_vertical: float
+
+    # 横の長さ, m
+    len_horizontal: float
+
+    # 壁の下端と上端の高さの差（通気層の浮力換気に使う）, m
+    height: float
+
+    def __post_init__(self):
+        """作るときに、質点とつながりの並びが合っているか確かめる（from_input で作れば、いつも合っている）。
+
+        壁の大きさは入力で確かめ済みなので、ここでは確かめない。
+        """
+
+        # つながりの数が「質点の数 + 1」でなければエラー
+        if len(self.links) != len(self.nodes) + 1:
+            raise ValueError(f'つながりの数は、質点の数 + 1（{len(self.nodes) + 1}）にしてください（{len(self.links)}）。')
+
+        # つながり k の右と、つながり k + 1 の左が、どちらも質点 k でなければエラー
+        for k, node in enumerate(self.nodes):
+            if self.links[k].right is not node or self.links[k + 1].left is not node:
+                raise ValueError(f'質点 {k} 番目の左右のつながりが、その質点につながっていません。')
+
+    @classmethod
+    def from_input(cls, wall_input: WallInput, find_material: FindMaterial | None = None) -> Self:
+        """壁の入力から壁の形を作る（入力から計算への橋渡し）。
+
+        Args:
+            wall_input: 壁の入力（確かめ済み）
+            find_material: 材料を探す関数。渡さなければ、Excel から探す（material_finder()）
+        """
+
+        # 材料を探す関数がなければ、Excel から探す関数を作る
+        if find_material is None:
+            find_material = material_finder()
+
+        # 質点の並びと、つながりの並び
+        nodes = _make_nodes(wall_input.layers, find_material)
+        links = _make_links(nodes, wall_input.interfaces)
+
+        # 入力の外表面を、計算の側の外表面に写す
+        s = wall_input.surface
+        surface = Surface(direction=s.direction, angle=s.angle, albedo=s.albedo,
+                          absorptance=s.absorptance, emissivity=s.emissivity, eva_height=s.eva_height)
+
+        return cls(nodes=nodes, links=links, surface=surface,
+                   len_vertical=wall_input.len_vertical, len_horizontal=wall_input.len_horizontal, height=wall_input.height)
+
+    @property
+    def area(self) -> float:
+        """壁の面積, m2（縦の長さ × 横の長さ）"""
+        return self.len_vertical * self.len_horizontal
