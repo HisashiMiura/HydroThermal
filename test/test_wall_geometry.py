@@ -4,7 +4,8 @@ import pytest
 
 from modules.material_loaders import load_materials
 from modules.materials import Materials
-from modules.thermo_dynamics import ROW_CP
+from modules.state import State
+from modules.thermo_dynamics import ROW_CP, ATP
 from modules import wall_geometry
 from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, _make_links, material_finder, Link, Outdoor, Indoor, OUTDOOR, INDOOR
 from modules.wall_input import MaterialLayerInput, AirLayerInput, InterfaceInput
@@ -294,3 +295,81 @@ class TestMakeLinks:
         assert links[-1].left is nodes[-1] and links[-1].right is INDOOR
         for k in range(1, len(nodes)):
             assert links[k].left is nodes[k - 1] and links[k].right is nodes[k]
+
+
+def _state(rh: float) -> State:
+    """20 deg.C・相対湿度 rh % の状態。"""
+    return State.init(t=20.0 + ATP, rh=rh)
+
+
+def _interface_m(cond_m: float) -> InterfaceInput:
+    """湿気コンダクタンス cond_m の境目（熱は 50）。"""
+    return InterfaceInput(cond_h=50.0, cond_m=cond_m)
+
+
+class TestLinkMoisture:
+
+    def test_interior(self):
+        # 合板の中、左右とも RH 50%：0.0018 / 湿気伝導率(50%)
+        a, b = _node('構造用合板1', 0.0009, 0.0009, 0), _node('構造用合板1', 0.0009, 0.0009, 0)
+        link = Link(left=a, right=b, interface=None)
+        s = _state(50.0)
+        assert link.r_m(s, s) == pytest.approx(0.0018 / a.material.get_lambda_dsh_m(rh=s.rh))
+
+    def test_interior_different_states(self):
+        # 左 RH 50%・右 RH 90%：左右の半分は、それぞれの側の状態で計算する
+        a, b = _node('構造用合板1', 0.0009, 0.0009, 0), _node('構造用合板1', 0.0009, 0.0009, 0)
+        link = Link(left=a, right=b, interface=None)
+        s50, s90 = _state(50.0), _state(90.0)
+        m = a.material
+        assert link.r_m(s50, s90) == pytest.approx(0.0009 / m.get_lambda_dsh_m(rh=s50.rh) + 0.0009 / m.get_lambda_dsh_m(rh=s90.rh))
+
+    @pytest.mark.parametrize('cond_m', [7.75e-7, 2.0e-11])
+    def test_layer_to_layer(self, cond_m):
+        # 合板の右の端と GW の左の端：境目の 1 / cond_m だけ（接触 7.75e-7、防湿層 2.0e-11）
+        a, b = _node('構造用合板1', 0.0009, 0.0, 0), _node('グラスウール1', 0.0, 0.0125, 1)
+        link = Link(left=a, right=b, interface=_interface_m(cond_m))
+        s = _state(50.0)
+        assert link.r_m(s, s) == pytest.approx(1 / cond_m)
+
+    def test_outside_surface(self):
+        link = Link(left=OUTDOOR, right=_node('サイディング', 0.0, 0.002, 0), interface=_interface_m(2.0e-11))
+        s = _state(50.0)
+        assert link.r_m(s, s) == pytest.approx(1 / 2.0e-11)
+
+    def test_inside_surface(self):
+        link = Link(left=_node('石膏ボード', 0.00525, 0.0, 6), right=INDOOR, interface=_interface_m(2.6e-10))
+        s = _state(50.0)
+        assert link.r_m(s, s) == pytest.approx(1 / 2.6e-10)
+
+    def test_air_layer(self):
+        air = AirNode(thickness=0.025, alpha=0.085, layer_index=1)
+        link = Link(left=_node('サイディング', 0.002, 0.0, 0), right=air, interface=_interface_m(3.43e-8))
+        s = _state(50.0)
+        assert link.r_m(s, s) == pytest.approx(1 / 3.43e-8)
+
+
+class TestLinkLiquid:
+
+    def test_interface(self):
+        # 境目のあるつながりは、液水は移動しない（無限大）
+        a, b = _node('構造用合板1', 0.0009, 0.0, 0), _node('グラスウール1', 0.0, 0.0125, 1)
+        link = Link(left=a, right=b, interface=_interface_m(7.75e-7))
+        s = _state(99.0)
+        assert link.r_l(s, s) == float('inf')
+
+    def test_interior_no_liquid(self):
+        # 構造用合板1 は RH 50% では液水伝導率 0：無限大
+        a, b = _node('構造用合板1', 0.0009, 0.0009, 0), _node('構造用合板1', 0.0009, 0.0009, 0)
+        link = Link(left=a, right=b, interface=None)
+        s = _state(50.0)
+        assert link.r_l(s, s) == float('inf')
+
+    def test_interior_liquid(self):
+        # 構造用合板1 は RH 99% では液水が動く：0.0018 / 液水伝導率
+        a, b = _node('構造用合板1', 0.0009, 0.0009, 0), _node('構造用合板1', 0.0009, 0.0009, 0)
+        link = Link(left=a, right=b, interface=None)
+        s = _state(99.0)
+        lambda_l = a.material.get_lambda_dsh_mu_l(rh=s.rh, t=s.t)
+        assert lambda_l > 0.0
+        assert link.r_l(s, s) == pytest.approx(0.0018 / lambda_l)

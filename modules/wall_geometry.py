@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from modules.material_loaders import load_materials
 from modules.materials import Material, Materials
+from modules.state import State
 from modules.thermo_dynamics import ROW_CP
 from modules.wall_input import AirLayerInput, InterfaceInput, LayerInput
 
@@ -66,6 +67,33 @@ class MaterialNode:
         """質点から右（室内側）の端までの熱抵抗, (m2 K)/W"""
         return self.d_right / self.material.lambda_h
 
+    def r_m_left(self, state: State) -> float:
+        """質点から左（外気側）の端までの透湿抵抗, (m2 s Pa)/kg（その状態の相対湿度での湿気伝導率を使う）"""
+        return self.d_left / self.material.get_lambda_dsh_m(rh=state.rh)
+
+    def r_m_right(self, state: State) -> float:
+        """質点から右（室内側）の端までの透湿抵抗, (m2 s Pa)/kg（その状態の相対湿度での湿気伝導率を使う）"""
+        return self.d_right / self.material.get_lambda_dsh_m(rh=state.rh)
+
+    def r_l_left(self, state: State) -> float:
+        """質点から左（外気側）の端までの液水の抵抗, (m2 s (J/kg))/kg"""
+        return self._r_l(self.d_left, state)
+
+    def r_l_right(self, state: State) -> float:
+        """質点から右（室内側）の端までの液水の抵抗, (m2 s (J/kg))/kg"""
+        return self._r_l(self.d_right, state)
+
+    def _r_l(self, d: float, state: State) -> float:
+        """距離 d の液水の抵抗, (m2 s (J/kg))/kg。
+
+        液水伝導率が 0（液水が移動しない材料、または液水拡散係数の範囲の外）なら、0 で割らずに無限大にする。
+        """
+
+        lambda_l = self.material.get_lambda_dsh_mu_l(rh=state.rh, t=state.t)
+
+        # 液水伝導率が 0 なら無限大（液水は移動しない）
+        return float('inf') if lambda_l == 0.0 else d / lambda_l
+
 
 @dataclass(frozen=True, kw_only=True)
 class AirNode:
@@ -115,6 +143,14 @@ class AirNode:
         """質点から右の端までの熱抵抗, (m2 K)/W（よく混ざった空気なので 0）"""
         return 0.0
 
+    def r_m_left(self, state: State) -> float:
+        """質点から左の端までの透湿抵抗, (m2 s Pa)/kg（よく混ざった空気なので 0）"""
+        return 0.0
+
+    def r_m_right(self, state: State) -> float:
+        """質点から右の端までの透湿抵抗, (m2 s Pa)/kg（よく混ざった空気なので 0）"""
+        return 0.0
+
 
 # 質点：材料の質点か空気の質点のどちらか
 Node = MaterialNode | AirNode
@@ -133,6 +169,10 @@ class Outdoor:
         """右の端までの熱抵抗, (m2 K)/W（質点ではないので 0）"""
         return 0.0
 
+    def r_m_right(self, state: State) -> float:
+        """右の端までの透湿抵抗, (m2 s Pa)/kg（質点ではないので 0）"""
+        return 0.0
+
 
 @dataclass(frozen=True)
 class Indoor:
@@ -145,6 +185,10 @@ class Indoor:
     @property
     def r_h_left(self) -> float:
         """左の端までの熱抵抗, (m2 K)/W（質点ではないので 0）"""
+        return 0.0
+
+    def r_m_left(self, state: State) -> float:
+        """左の端までの透湿抵抗, (m2 s Pa)/kg（質点ではないので 0）"""
         return 0.0
 
 
@@ -203,6 +247,39 @@ class Link:
 
         # 左から右の端まで ＋ 境目 ＋ 右から左の端まで（外気・室内・空気の質点の分は 0）
         return self.left.r_h_right + r_interface + self.right.r_h_left
+
+    def r_m(self, state_left: State, state_right: State) -> float:
+        """透湿抵抗, (m2 s Pa)/kg
+
+        左右の半分は、それぞれの側の状態（相対湿度）で計算する。外気・室内の側には、外気・室内の状態を渡す（使わないが、渡し方をそろえる）。
+
+        Args:
+            state_left: 左（質点か外気）の状態
+            state_right: 右（質点か室内）の状態
+        """
+
+        # 境目の透湿抵抗（層の中なら 0）
+        r_interface = 1.0 / self.interface.cond_m if self.interface is not None else 0.0
+
+        # 左から右の端まで ＋ 境目 ＋ 右から左の端まで（外気・室内・空気の質点の分は 0）
+        return self.left.r_m_right(state_left) + r_interface + self.right.r_m_left(state_right)
+
+    def r_l(self, state_left: State, state_right: State) -> float:
+        """液水の抵抗, (m2 s (J/kg))/kg
+
+        境目（層と層、材料と通気層、表面）では液水は移動しないので無限大。層の中だけ、左右の材料の質点の液水の抵抗を足す。
+
+        Args:
+            state_left: 左の状態
+            state_right: 右の状態
+        """
+
+        # 境目のあるつながりなら無限大（境目では液水は移動しない）
+        if self.interface is not None:
+            return float('inf')
+
+        # 層の中（左右とも同じ層の材料の質点）
+        return self.left.r_l_right(state_left) + self.right.r_l_left(state_right)
 
 
 # 材料を探す関数：(出どころ, 名称) → 材料
