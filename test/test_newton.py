@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
+from scipy.optimize import fsolve
 
-from modules.newton import banded_jacobian, newton_solve, NewtonNotConverged
+from modules.newton import _banded_jacobian, newton_solve, NewtonNotConverged
 
 
 def _to_banded(a: np.ndarray, l: int, u: int) -> np.ndarray:
@@ -34,7 +35,7 @@ class TestBandedJacobian:
         a = _random_banded_matrix(n, l, u)
         b = np.arange(n, dtype=float)
         x_ps = np.linspace(-1.0, 1.0, n)
-        f_ps, ab = banded_jacobian(lambda x: a @ x - b, x_ps, l=l, u=u)
+        f_ps, ab = _banded_jacobian(lambda x: a @ x - b, x_ps, band=(l, u))
         np.testing.assert_allclose(ab, _to_banded(a, l, u), rtol=1e-6, atol=1e-6)
         np.testing.assert_allclose(f_ps, a @ x_ps - b)
 
@@ -48,7 +49,7 @@ class TestBandedJacobian:
 
         n = 8
         x_ps = np.linspace(0.5, 2.0, n)
-        _, ab = banded_jacobian(f, x_ps, l=1, u=1)
+        _, ab = _banded_jacobian(f, x_ps, band=(1, 1))
         expected = np.diag(3.0 * x_ps ** 2) + np.diag(np.ones(n - 1), -1) + np.diag(-2.0 * np.ones(n - 1), 1)
         np.testing.assert_allclose(ab, _to_banded(expected, 1, 1), rtol=1e-6, atol=1e-6)
 
@@ -62,7 +63,7 @@ class TestBandedJacobian:
             calls.append(1)
             return a @ x
 
-        banded_jacobian(f, np.ones(n), l=l, u=u)
+        _banded_jacobian(f, np.ones(n), band=(l, u))
         assert len(calls) == l + u + 1 + 1
 
 
@@ -84,7 +85,7 @@ class TestNewtonSolve:
         n = 12
         a = _random_banded_matrix(n, l, u) + np.eye(n) * 5.0
         b = np.arange(n, dtype=float)
-        x_ps, m = newton_solve(lambda x: a @ x - b, np.zeros(n), l=l, u=u, tol=1e-9)
+        x_ps, m = newton_solve(lambda x: a @ x - b, np.zeros(n), band=(l, u), tol=1e-9)
         np.testing.assert_allclose(x_ps, np.linalg.solve(a, b), rtol=1e-9)
         assert 1 <= m <= 2
 
@@ -93,7 +94,7 @@ class TestNewtonSolve:
         n = 10
         x_star = np.linspace(1.0, 2.0, n)
         b_ps = _cubic(np.zeros(n))(x_star)
-        x_ps, m = newton_solve(_cubic(b_ps), np.ones(n), l=1, u=1, tol=1e-10)
+        x_ps, m = newton_solve(_cubic(b_ps), np.ones(n), band=(1, 1), tol=1e-10)
         np.testing.assert_allclose(x_ps, x_star, rtol=1e-9)
         assert m > 1
 
@@ -102,11 +103,20 @@ class TestNewtonSolve:
         n = 10
         x_star = np.linspace(1.0, 2.0, n)
         b_ps = _cubic(np.zeros(n))(x_star)
-        x_ps, m = newton_solve(_cubic(b_ps), x_star, l=1, u=1, tol=1e-10)
+        x_ps, m = newton_solve(_cubic(b_ps), x_star, band=(1, 1), tol=1e-10)
         assert m == 0
         np.testing.assert_allclose(x_ps, x_star)
 
     def test_not_converged(self):
         # 答えのない式 x_p^2 + 1 = 0 は収束しない
         with pytest.raises(NewtonNotConverged):
-            newton_solve(lambda x: x ** 2 + 1.0, np.full(3, 0.7), l=1, u=1, tol=1e-10, max_iter=20)
+            newton_solve(lambda x: x ** 2 + 1.0, np.full(3, 0.7), band=(1, 1), tol=1e-10, max_iter=20)
+
+    def test_same_as_fsolve(self):
+        # 同じ非線形の式を scipy の fsolve（MINPACK）でも解き、答えが一致することで正しさを確かめる
+        n = 10
+        x_star = np.linspace(1.0, 2.0, n)
+        f = _cubic(_cubic(np.zeros(n))(x_star))
+        x_ps, _ = newton_solve(f, np.ones(n), band=(1, 1), tol=1e-10)
+        x_fsolve = fsolve(f, np.ones(n), band=(1, 1), xtol=1e-12)
+        np.testing.assert_allclose(x_ps, x_fsolve, rtol=1e-9)

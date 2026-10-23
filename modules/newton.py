@@ -1,7 +1,8 @@
 """汎用のニュートン・ラフソン法（設計の文書 2.8 節）。
 
 物理を知らない部品。未知数の並び x_p と、残差の並び F_p（p は未知数・式の番号）を扱う。
-ヤコビ行列 J_pq = ∂F_p / ∂x_q は帯の形（対角の下に l 本、上に u 本）とし、
+ヤコビ行列 J_pq = ∂F_p / ∂x_q は帯の形とし、帯の幅をタプル band = (l, u)（対角の下に l 本、上に u 本）で表す。
+帯の幅は解く問題の形で決まるので、物理を知っている呼ぶ側が決めて渡す。
 scipy.linalg.solve_banded の詰めた形 ab（J の p 行 q 列は ab[u + p - q, q]）で持つ。
 """
 
@@ -14,7 +15,7 @@ from scipy.linalg import LinAlgError, solve_banded
 Residual = Callable[[np.ndarray], np.ndarray]
 
 
-def banded_jacobian(f: Residual, x_ps: np.ndarray, l: int, u: int) -> tuple[np.ndarray, np.ndarray]:
+def _banded_jacobian(f: Residual, x_ps: np.ndarray, band: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
     """数値微分で、帯のヤコビ行列を詰めた形で作る。
 
     未知数 q を h_q だけずらしたときの残差の変化から、J の q 列を求める：J の q 列 ≈ (F(x + h_q e_q) - F(x)) / h_q。
@@ -24,8 +25,7 @@ def banded_jacobian(f: Residual, x_ps: np.ndarray, l: int, u: int) -> tuple[np.n
     Args:
         f: 残差の関数
         x_ps: 未知数の並び（ここでのヤコビ行列を求める）, [p]
-        l: 対角の下の帯の本数
-        u: 対角の上の帯の本数
+        band: ヤコビ行列の帯の幅 (対角の下の本数 l, 上の本数 u)
 
     Returns:
         x_ps での残差の並び F_ps, [p]、帯のヤコビ行列の詰めた形 ab（形は (l + u + 1, 未知数の数)）
@@ -33,6 +33,9 @@ def banded_jacobian(f: Residual, x_ps: np.ndarray, l: int, u: int) -> tuple[np.n
 
     x_ps = np.asarray(x_ps, dtype=float)
     n = len(x_ps)
+
+    # 帯の幅：対角の下の本数 l、上の本数 u
+    l, u = band
 
     # 帯の幅
     w = l + u + 1
@@ -68,7 +71,7 @@ class NewtonNotConverged(RuntimeError):
     """ニュートン法が、決めた回数のうちに収束しなかった（またはヤコビ行列が解けなかった）。"""
 
 
-def newton_solve(f: Residual, x0_ps: np.ndarray, l: int, u: int, tol: float, max_iter: int = 20) -> tuple[np.ndarray, int]:
+def newton_solve(f: Residual, x0_ps: np.ndarray, band: tuple[int, int], tol: float, max_iter: int = 20) -> tuple[np.ndarray, int]:
     """ニュートン・ラフソン法で、残差 F(x) = 0 となる x を求める。
 
     m 回目：残差 F と帯のヤコビ行列 J を作り、残差のいちばん大きいものが tol 以下なら終わる。
@@ -77,8 +80,7 @@ def newton_solve(f: Residual, x0_ps: np.ndarray, l: int, u: int, tol: float, max
     Args:
         f: 残差の関数
         x0_ps: 最初の仮の値, [p]
-        l: ヤコビ行列の対角の下の帯の本数
-        u: ヤコビ行列の対角の上の帯の本数
+        band: ヤコビ行列の帯の幅 (対角の下の本数 l, 上の本数 u)。熱だけなら (1, 1)
         tol: 残差の許容値（残差と同じ単位。熱なら W/m2）
         max_iter: 修正の回数の上限
 
@@ -94,7 +96,7 @@ def newton_solve(f: Residual, x0_ps: np.ndarray, l: int, u: int, tol: float, max
     for m in range(max_iter + 1):
 
         # 残差と帯のヤコビ行列
-        f_ps, ab = banded_jacobian(f, x_ps, l=l, u=u)
+        f_ps, ab = _banded_jacobian(f, x_ps, band)
 
         # 残差のいちばん大きいものが許容値以下なら、答え（ここまでに m 回修正した）
         if np.max(np.abs(f_ps)) <= tol:
@@ -106,7 +108,7 @@ def newton_solve(f: Residual, x0_ps: np.ndarray, l: int, u: int, tol: float, max
 
         # J Δx = -F を解く。ヤコビ行列が解けない（特異な）ときは、収束しなかったとして止める
         try:
-            dx_ps = solve_banded((l, u), ab, -f_ps)
+            dx_ps = solve_banded(band, ab, -f_ps)
         except LinAlgError:
             raise NewtonNotConverged(f'ニュートン法の {m + 1} 回目で、ヤコビ行列が解けませんでした（特異）。') from None
 
