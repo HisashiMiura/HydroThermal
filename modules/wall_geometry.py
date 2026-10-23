@@ -271,3 +271,34 @@ def _make_nodes(layers: tuple[LayerInput, ...], find_material: FindMaterial) -> 
             nodes.append(MaterialNode(d_left=d_left, d_right=d_right, material=material, layer_index=i))
 
     return tuple(nodes)
+
+
+def _make_links(nodes: tuple[Node, ...], interfaces: tuple[InterfaceInput, ...]) -> tuple[Link, ...]:
+    """質点の並びと境目の並びから、つながりの並び（外気側から順、質点の数 + 1 個）を作る。
+
+    k 番目のつながりは、質点 k - 1 と質点 k の間（0 番目は外気と質点 0、最後は最後の質点と室内）。
+    j 番目の境目は、層 j - 1 と層 j の間（0 番目は外表面、最後は内表面）。
+
+    内部用の関数。ふだんは WallGeometry.from_input から、_make_nodes で作った質点と WallInput の interfaces を渡して呼ぶ。
+    正しく作れているかは、Link を作るときの確認（境目の有無と層の関係）でも確かめられる。
+
+    Args:
+        nodes: 質点の並び（_make_nodes で作ったもの）
+        interfaces: 境目の並び（WallInput.interfaces。層の数 + 1 個）
+    """
+
+    # 外気と最初の質点（外表面）
+    links = [Link(left=OUTDOOR, right=nodes[0], interface=interfaces[0])]
+
+    # 隣り合う質点どうし（0 番目と 1 番目、1 番目と 2 番目、…）
+    for left, right in zip(nodes[:-1], nodes[1:]):
+
+        # 同じ層の中なら境目なし、層が変わるところなら右の層の手前の境目（層 i と層 i + 1 の間は interfaces[i + 1]）
+        interface = None if left.layer_index == right.layer_index else interfaces[right.layer_index]
+
+        links.append(Link(left=left, right=right, interface=interface))
+
+    # 最後の質点と室内（内表面）
+    links.append(Link(left=nodes[-1], right=INDOOR, interface=interfaces[-1]))
+
+    return tuple(links)

@@ -6,7 +6,7 @@ from modules.material_loaders import load_materials
 from modules.materials import Materials
 from modules.thermo_dynamics import ROW_CP
 from modules import wall_geometry
-from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, material_finder, Link, Outdoor, Indoor, OUTDOOR, INDOOR
+from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, _make_links, material_finder, Link, Outdoor, Indoor, OUTDOOR, INDOOR
 from modules.wall_input import MaterialLayerInput, AirLayerInput, InterfaceInput
 
 
@@ -232,3 +232,65 @@ class TestLinkHeat:
         link = Link(left=OUTDOOR, right=_node('サイディング', 0.0, 0.002, 0), interface=_interface(22.4))
         with pytest.raises(dataclasses.FrozenInstanceError):
             link.interface = None
+
+
+def _lambda(name: str) -> float:
+    """旧 Excel の材料の熱伝導率, W/(m K)。"""
+    return material_finder()('whamcavity', name).lambda_h
+
+
+def _main_wall_interfaces() -> tuple:
+    """今の main.py・Fortran の入力の壁の境目 8 個（外表面、通気層の両側、接触、防湿層、内表面）。"""
+    return tuple(InterfaceInput(cond_h=h, cond_m=w) for h, w in (
+        (22.4, 2.0e-11), (9.2, 3.43e-8), (9.2, 3.43e-8), (50.0, 7.75e-7),
+        (50.0, 7.75e-7), (50.0, 2.0e-11), (50.0, 7.75e-7), (9.2, 2.6e-10),
+    ))
+
+
+class TestMakeLinks:
+
+    def test_one_layer_total(self):
+        # 合板 9 mm・分割数 6：つながり 7 個、熱抵抗の合計 = 1/22.4 + 0.009/λ + 1/9.2
+        nodes = _make_nodes((_layer('構造用合板1', 0.009, 6),), find_material=material_finder())
+        links = _make_links(nodes, (_interface(22.4), _interface(9.2)))
+        assert len(links) == 7
+        assert sum(l.r_h for l in links) == pytest.approx(1 / 22.4 + 0.009 / _lambda('構造用合板1') + 1 / 9.2)
+
+    def test_two_layers_total(self):
+        # 合板 9 mm + GW 100 mm、接触 50：接触抵抗 1/50 が 1 回だけ入る
+        layers = (_layer('構造用合板1', 0.009, 6), _layer('グラスウール1', 0.1, 5))
+        nodes = _make_nodes(layers, find_material=material_finder())
+        links = _make_links(nodes, (_interface(22.4), _interface(50.0), _interface(9.2)))
+        expected = 1 / 22.4 + 0.009 / _lambda('構造用合板1') + 1 / 50.0 + 0.1 / _lambda('グラスウール1') + 1 / 9.2
+        assert sum(l.r_h for l in links) == pytest.approx(expected)
+
+    def test_air_layer_total(self):
+        # サイディング + 通気層 + 石膏ボード：通気層の両側は 1/9.2、空気の中の抵抗は 0
+        layers = (_layer('サイディング', 0.016, 5), _air_layer(), _layer('石膏ボード', 0.042, 5))
+        nodes = _make_nodes(layers, find_material=material_finder())
+        links = _make_links(nodes, (_interface(22.4), _interface(9.2), _interface(9.2), _interface(9.2)))
+        expected = 1 / 22.4 + 0.016 / _lambda('サイディング') + 1 / 9.2 + 1 / 9.2 + 0.042 / _lambda('石膏ボード') + 1 / 9.2
+        assert sum(l.r_h for l in links) == pytest.approx(expected)
+
+    def test_main_wall_number(self):
+        # 今の壁 7 層・質点 33 個：つながり 34 個
+        nodes = _make_nodes(_main_wall_layers(), find_material=material_finder())
+        assert len(_make_links(nodes, _main_wall_interfaces())) == 34
+
+    def test_each_interface_used_once(self):
+        # 境目を持つつながりは 8 個で、境目の 8 個が外気側から順にちょうど 1 回ずつ使われる
+        interfaces = _main_wall_interfaces()
+        nodes = _make_nodes(_main_wall_layers(), find_material=material_finder())
+        used = [l.interface for l in _make_links(nodes, interfaces) if l.interface is not None]
+        # 値が同じ境目（9.2・3.43e-8 など）を区別するため、同じものかどうか（is）で比べる
+        assert len(used) == 8
+        assert all(u is i for u, i in zip(used, interfaces))
+
+    def test_order(self):
+        # k 番目のつながりは、質点 k - 1 と質点 k の間。両端は外気と室内
+        nodes = _make_nodes(_main_wall_layers(), find_material=material_finder())
+        links = _make_links(nodes, _main_wall_interfaces())
+        assert links[0].left is OUTDOOR and links[0].right is nodes[0]
+        assert links[-1].left is nodes[-1] and links[-1].right is INDOOR
+        for k in range(1, len(nodes)):
+            assert links[k].left is nodes[k - 1] and links[k].right is nodes[k]
