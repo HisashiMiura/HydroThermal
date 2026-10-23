@@ -254,6 +254,7 @@ class Link:
 | `k` | つながり（質点 k − 1 と k の間） | `r_h_ks` |
 | `l` | 層 | `thickness_ls` |
 | `n` | 時間のステップ | `t_n_is`（ステップ n の質点ごとの温度） |
+| `p`（`q`） | ニュートン法の未知数・式の番号（汎用の部品 `newton.py`。熱だけなら p ＝ i、熱と水分を一緒に解くときは T が 2i、μ が 2i ＋ 1）。ヤコビ行列 J_pq の列には q を使う | `x_ps`、`f_ps` |
 
 - 添え字が 2 つ付くときは、外側（時間）から順に並べる（`t_n_is`）。
 - 部品の並び（`WallGeometry.nodes`・`links`、`WallInput.layers` などのタプル）は、配列ではないのでふつうの複数形のまま。何の番号で並んでいるか（`nodes` は i、`links` は k、`layers` は l）を docstring に書く。
