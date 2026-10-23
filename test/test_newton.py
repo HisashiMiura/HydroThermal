@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from modules.newton import banded_jacobian
+from modules.newton import banded_jacobian, newton_solve, NewtonNotConverged
 
 
 def _to_banded(a: np.ndarray, l: int, u: int) -> np.ndarray:
@@ -64,3 +64,49 @@ class TestBandedJacobian:
 
         banded_jacobian(f, np.ones(n), l=l, u=u)
         assert len(calls) == l + u + 1 + 1
+
+
+def _cubic(b_ps: np.ndarray):
+    """非線形の式 F_p = x_p^3 + x_(p-1) - 2 x_(p+1) - b_p。"""
+    def f(x):
+        r = x ** 3 - b_ps
+        r[1:] += x[:-1]
+        r[:-1] -= 2.0 * x[1:]
+        return r
+    return f
+
+
+class TestNewtonSolve:
+
+    @pytest.mark.parametrize('l, u', [(1, 1), (3, 3)])
+    def test_linear(self, l, u):
+        # 1 次の連立方程式 A x = b：ふつうの解き方の答えと一致し、修正は 1〜2 回（三重対角と、熱と水分を一緒に解くときの幅 3）
+        n = 12
+        a = _random_banded_matrix(n, l, u) + np.eye(n) * 5.0
+        b = np.arange(n, dtype=float)
+        x_ps, m = newton_solve(lambda x: a @ x - b, np.zeros(n), l=l, u=u, tol=1e-9)
+        np.testing.assert_allclose(x_ps, np.linalg.solve(a, b), rtol=1e-9)
+        assert 1 <= m <= 2
+
+    def test_nonlinear(self):
+        # 答え x* から b を作り、1 から始めて x* に収束する
+        n = 10
+        x_star = np.linspace(1.0, 2.0, n)
+        b_ps = _cubic(np.zeros(n))(x_star)
+        x_ps, m = newton_solve(_cubic(b_ps), np.ones(n), l=1, u=1, tol=1e-10)
+        np.testing.assert_allclose(x_ps, x_star, rtol=1e-9)
+        assert m > 1
+
+    def test_already_solved(self):
+        # 最初の仮の値が答えなら、修正は 0 回
+        n = 10
+        x_star = np.linspace(1.0, 2.0, n)
+        b_ps = _cubic(np.zeros(n))(x_star)
+        x_ps, m = newton_solve(_cubic(b_ps), x_star, l=1, u=1, tol=1e-10)
+        assert m == 0
+        np.testing.assert_allclose(x_ps, x_star)
+
+    def test_not_converged(self):
+        # 答えのない式 x_p^2 + 1 = 0 は収束しない
+        with pytest.raises(NewtonNotConverged):
+            newton_solve(lambda x: x ** 2 + 1.0, np.full(3, 0.7), l=1, u=1, tol=1e-10, max_iter=20)

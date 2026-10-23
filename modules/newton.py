@@ -8,6 +8,7 @@ scipy.linalg.solve_banded の詰めた形 ab（J の p 行 q 列は ab[u + p - q
 from collections.abc import Callable
 
 import numpy as np
+from scipy.linalg import LinAlgError, solve_banded
 
 # 残差の関数：未知数の並び x_ps → 残差の並び F_ps
 Residual = Callable[[np.ndarray], np.ndarray]
@@ -61,3 +62,55 @@ def banded_jacobian(f: Residual, x_ps: np.ndarray, l: int, u: int) -> tuple[np.n
                 ab[u + p - q, q] = df_ps[p] / h_ps[q]
 
     return f_ps, ab
+
+
+class NewtonNotConverged(RuntimeError):
+    """ニュートン法が、決めた回数のうちに収束しなかった（またはヤコビ行列が解けなかった）。"""
+
+
+def newton_solve(f: Residual, x0_ps: np.ndarray, l: int, u: int, tol: float, max_iter: int = 20) -> tuple[np.ndarray, int]:
+    """ニュートン・ラフソン法で、残差 F(x) = 0 となる x を求める。
+
+    m 回目：残差 F と帯のヤコビ行列 J を作り、残差のいちばん大きいものが tol 以下なら終わる。
+    そうでなければ、J Δx = -F を帯行列の直接法で解いて、x を x + Δx に更新する。
+
+    Args:
+        f: 残差の関数
+        x0_ps: 最初の仮の値, [p]
+        l: ヤコビ行列の対角の下の帯の本数
+        u: ヤコビ行列の対角の上の帯の本数
+        tol: 残差の許容値（残差と同じ単位。熱なら W/m2）
+        max_iter: 修正の回数の上限
+
+    Returns:
+        答え x_ps, [p]、修正した回数
+
+    Raises:
+        NewtonNotConverged: max_iter 回修正しても残差が tol 以下にならなかったとき、またはヤコビ行列が解けなかったとき
+    """
+
+    x_ps = np.array(x0_ps, dtype=float)
+
+    for m in range(max_iter + 1):
+
+        # 残差と帯のヤコビ行列
+        f_ps, ab = banded_jacobian(f, x_ps, l=l, u=u)
+
+        # 残差のいちばん大きいものが許容値以下なら、答え（ここまでに m 回修正した）
+        if np.max(np.abs(f_ps)) <= tol:
+            return x_ps, m
+
+        # 修正の回数の上限に達していたら、ここで止める（下で例外を出す）
+        if m == max_iter:
+            break
+
+        # J Δx = -F を解く。ヤコビ行列が解けない（特異な）ときは、収束しなかったとして止める
+        try:
+            dx_ps = solve_banded((l, u), ab, -f_ps)
+        except LinAlgError:
+            raise NewtonNotConverged(f'ニュートン法の {m + 1} 回目で、ヤコビ行列が解けませんでした（特異）。') from None
+
+        # x を更新する
+        x_ps = x_ps + dx_ps
+
+    raise NewtonNotConverged(f'ニュートン法が {max_iter} 回の修正で収束しませんでした（残差の最大 {np.max(np.abs(f_ps)):.3g}、許容値 {tol:.3g}）。')
