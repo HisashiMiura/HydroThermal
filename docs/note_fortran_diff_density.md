@@ -40,7 +40,7 @@ END IF
 NRC の報告書 RR-110（MEWS、式 (5)）と、ASHRAE RP-1018 の概要（Kumaran 2006、式 (5)）は、どちらも液水拡散係数を次の式で定義しています。
 
 $$
-J_l = -\rho_0 \, D_w \, \nabla u
+J_l = -\rho_0 D_w \nabla u
 $$
 
 $\rho_0$ は乾燥した材料の密度、$u$ は質量含水率 kg/kg、$D_w$ の単位は m²/s です。DIFF の $D_w$ の式は RP-1018 の Plywood の値なので、同じ定義と考えられます。
