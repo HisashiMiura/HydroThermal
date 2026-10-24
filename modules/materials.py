@@ -62,7 +62,7 @@ class Material:
         return self.vapor_conductivity.lambda_dsh_m(rh * 0.01)
 
     def get_lambda_dsh_mu_l(self, rh: float, t: float) -> float:
-        """水分化学ポテンシャル勾配に対する液相水分伝導率, (kg/s)/(m (J/kg)) を求める。
+        """水分化学ポテンシャル勾配に対する液相水分伝導率, (kg/s)/(m (J/kg)) を求める（材料の乾燥密度 rho を掛ける）。
         Args:
             rh: 相対湿度(0.0～100.0), %
             t: 絶対温度, K
@@ -70,7 +70,13 @@ class Material:
             液相水分伝導率, (kg/s)/(m (J/kg))
         """
 
-        return thermo_dynamics.get_lambda_dsh_mu_l(rh=rh, t=t, get_u=self.get_u, d_w=self.liquid_diffusivity.d_w)
+        return thermo_dynamics.get_lambda_dsh_mu_l(
+            rh=rh,
+            t=t,
+            rho_s=self.rho,
+            get_u=self.get_u,
+            d_w=self.liquid_diffusivity.d_w
+        )
 
     def get_dpsi_dmu(self, mu: float, t: float):
         """水分化学ポテンシャル変化に対する含水率変化 (DPDU) を計算する。

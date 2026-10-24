@@ -224,17 +224,28 @@ def get_rh(mu: float, t: float) -> float:
     return min(rh, 100.0) 
 
 
-def get_lambda_dsh_mu_l(rh: float, t: float, get_u: Callable[[float], float], d_w: Callable[[float], float]) -> float:
+def get_lambda_dsh_mu_l(
+        rh: float,
+        t: float,
+        rho_s: float,
+        get_u: Callable[[float], float],
+        d_w: Callable[[float], float]
+    ) -> float:
     """水分化学ポテンシャル勾配に対する液相水分伝導率 (DIFF) を計算する。
 
     Fortran（Whamcavity.f95）の SUBROUTINE DIFF に当たる。
     Fortran では構造用合板の係数と範囲が直書きされていたが、ここでは液水拡散係数を求める関数 d_w を受け取る。
 
-    液相水分伝導率 = 水の密度 × 液水拡散係数 × |Δu / Δμ|
+    液相水分伝導率 = 材料の乾燥密度 × 液水拡散係数 × |Δu / Δμ|
+
+    液水拡散係数は、出典（RR-110 の式 (5)、ASHRAE RP-1018）で J_l = -ρ0 D_w grad u（ρ0：乾燥密度、u：質量含水率 kg/kg）と
+    定義されているので、掛けるのは材料の乾燥密度（docs/governing_equations.md の式 3.4）。
+    Fortran の DIFF は水の密度 998 を掛けているが、意図して変えた（2026-10-24、docs/note_fortran_diff_density.md）。
 
     Args:
         rh: 相対湿度(0.0～100.0), %
         t: 絶対温度, K
+        rho_s: 材料の乾燥密度, kg/m3
         get_u: 相対湿度(%)から質量含水率(kg/kg)を求める関数
         d_w: 質量含水率(kg/kg)から液水拡散係数(m2/s)を求める関数
     Returns:
@@ -264,10 +275,9 @@ def get_lambda_dsh_mu_l(rh: float, t: float, get_u: Callable[[float], float], d_
     if abs(wp1 - wp2) <= 1e-12:
         return 0.0
 
-    # 拡散係数(m2/s) は含水率差(kg/kg)を駆動力とする係数なので、
-    # 水の密度を掛けて質量基準に、Δu/Δμ を掛けて水分化学ポテンシャル差(J/kg)基準に直す。
-    # ROW: 水の密度, kg/m3
-    return ROW * dw * abs((u1 - u2) / (wp1 - wp2))
+    # 拡散係数(m2/s) は質量含水率の勾配(kg/kg)を駆動力とする係数なので、
+    # 乾燥密度を掛けて含水量(kg/m3)の勾配の基準に、Δu/Δμ を掛けて水分化学ポテンシャル差(J/kg)基準に直す。
+    return rho_s * dw * abs((u1 - u2) / (wp1 - wp2))
 
 
 def get_dpsi_dmu(mu: float, t: float, gma: float, get_u: callable) -> float:

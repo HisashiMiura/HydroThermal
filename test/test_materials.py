@@ -188,14 +188,16 @@ def _fortran_diff(m, rh: float, t: float) -> float:
         wp2 = thermo_dynamics.get_wp(rh2, t)
         wd1 = m.get_u(rh1) * 100
         wd2 = m.get_u(rh2) * 100
-        return 998. * dw * abs((wd1 - wd2) * 0.01 / (wp1 - wp2))
+        # Fortran は水の密度 998 を掛けるが、Python は材料の乾燥密度を掛けるように意図して変えた
+        # （液水拡散係数の定義 J_l = -ρ0 D_w grad u から。docs/note_fortran_diff_density.md）。そのため 998 を m.rho に置き換える
+        return m.rho * dw * abs((wd1 - wd2) * 0.01 / (wp1 - wp2))
     else:
         return 0.0
 
 
 @pytest.mark.parametrize('name', _materials.get_material_name())
 def test_lambda_dsh_mu_l(name):
-    """液相水分伝導率が、Fortran の DIFF を書き写した計算と一致することを確認する。
+    """液相水分伝導率が、Fortran の DIFF を書き写した計算（ただし水の密度 998 を乾燥密度に置き換えたもの）と一致することを確認する。
 
     構造用合板1 は含水率が 0.45 を超える RH 約 98% より上で 0 より大きく、それより下で 0。ほかの材料は常に 0。
     """
