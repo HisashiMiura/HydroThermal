@@ -7,7 +7,7 @@
 層の中の質点はコントロールボリュームの中心にあり、層の端の質点は表面・境目の上にある。
 
 つながりは、質点に「質点からコントロールボリュームの端までの抵抗」を聞いて、境目の抵抗と足す。
-材料の質点と空気の質点は、同じ名前（width・heat_capacity・r_h_left・r_h_right・layer_index）で使える。
+材料の質点と空気の質点は、同じ名前（width・heat_capacity_dry・heat_capacity・water_amount・r_h_left・r_h_right・layer_index）で使える。
 """
 
 from collections.abc import Callable
@@ -18,7 +18,7 @@ from modules.direction import Direction
 from modules.material_loaders import load_materials
 from modules.materials import Material, Materials
 from modules.state import State
-from modules.thermo_dynamics import ROW_CP
+from modules.thermo_dynamics import CPL, RG, ROW_CP
 from modules.wall_input import AirLayerInput, InterfaceInput, LayerInput, WallInput
 
 
@@ -55,9 +55,25 @@ class MaterialNode:
         return self.d_left + self.d_right
 
     @property
-    def heat_capacity(self) -> float:
-        """熱容量, J/(m2 K)（幅 × 容積比熱）"""
+    def heat_capacity_dry(self) -> float:
+        """乾燥した材料の熱容量, J/(m2 K)（幅 × 容積比熱）"""
         return self.width * self.material.c_rho
+
+    def water_amount(self, state: State) -> float:
+        """水分量 W_i, kg/m2（乾燥密度 × 質量含水率 × 幅。docs/governing_equations.md 6.2 節）
+
+        Args:
+            state: この質点の状態
+        """
+        return self.material.rho * self.material.get_u(state.rh) * self.width
+
+    def heat_capacity(self, state: State) -> float:
+        """熱容量 C_i, J/(m2 K)（乾燥した材料 ＋ 含まれる水の熱容量 c_w × W_i）
+
+        Args:
+            state: この質点の状態
+        """
+        return self.heat_capacity_dry + CPL * self.water_amount(state)
 
     @property
     def r_h_left(self) -> float:
@@ -131,9 +147,25 @@ class AirNode:
         return self.thickness
 
     @property
-    def heat_capacity(self) -> float:
-        """熱容量, J/(m2 K)（厚さ × 空気の容積比熱）"""
+    def heat_capacity_dry(self) -> float:
+        """空気の熱容量, J/(m2 K)（厚さ × 空気の容積比熱）"""
         return self.thickness * ROW_CP
+
+    def water_amount(self, state: State) -> float:
+        """水分量 W_i, kg/m2（空気の中の水蒸気：水蒸気の密度 p_v / (R_v T) × 厚さ）
+
+        Args:
+            state: この質点の状態
+        """
+        return state.p_v / (RG * state.t) * self.thickness
+
+    def heat_capacity(self, state: State) -> float:
+        """熱容量 C_i, J/(m2 K)（空気の容積比熱 × 厚さ。水蒸気の分は小さいので足さない）
+
+        Args:
+            state: この質点の状態（使わないが、材料の質点と呼び方をそろえる）
+        """
+        return self.heat_capacity_dry
 
     @property
     def r_h_left(self) -> float:

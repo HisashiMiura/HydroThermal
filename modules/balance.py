@@ -64,8 +64,8 @@ def heat_residual_is(
         indoor: 次の時刻の室内の境界条件
     """
 
-    # 各質点の熱容量 C_i, J/(m2 K), [i]
-    c_is = np.array([node.heat_capacity for node in geometry.nodes])
+    # 各質点の熱容量 C_i, J/(m2 K), [i]（熱だけの段階では乾燥した値。水の分は熱と水分を一緒に解くとき（5-6）に足す）
+    c_is = np.array([node.heat_capacity_dry for node in geometry.nodes])
 
     # 各つながりの熱の流れ q_k, W/m2, [k]（次の時刻の温度で計算する：後退差分）
     q_ks = heat_flow_ks(geometry, t_is, outdoor, indoor)
@@ -174,3 +174,31 @@ def liquid_flow_ks(
 
     # 抵抗が無限大のつながりは、差 / 無限大 = 0
     return (mu_left_ks - mu_right_ks) / r_l_ks
+
+
+def water_amount_is(geometry: WallGeometry, t_is: np.ndarray, mu_is: np.ndarray) -> np.ndarray:
+    """各質点の水分量 W_i, kg/m2, [i]（docs/governing_equations.md 6.2 節）。
+
+    Args:
+        geometry: 壁の形
+        t_is: 各質点の温度, K, [i]
+        mu_is: 各質点の水分化学ポテンシャル, J/kg, [i]
+    """
+    return np.array([
+        node.water_amount(State(t=t_i, mu=mu_i))
+        for node, t_i, mu_i in zip(geometry.nodes, t_is, mu_is)
+    ])
+
+
+def heat_capacity_is(geometry: WallGeometry, t_is: np.ndarray, mu_is: np.ndarray) -> np.ndarray:
+    """各質点の熱容量 C_i, J/(m2 K), [i]（乾燥した材料 ＋ 含まれる水。docs/governing_equations.md 6.2 節）。
+
+    Args:
+        geometry: 壁の形
+        t_is: 各質点の温度, K, [i]
+        mu_is: 各質点の水分化学ポテンシャル, J/kg, [i]
+    """
+    return np.array([
+        node.heat_capacity(State(t=t_i, mu=mu_i))
+        for node, t_i, mu_i in zip(geometry.nodes, t_is, mu_is)
+    ])

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from modules.balance import heat_flow_ks, heat_residual_is, liquid_flow_ks, vapour_flow_ks
+from modules.balance import heat_capacity_is, heat_flow_ks, heat_residual_is, liquid_flow_ks, vapour_flow_ks, water_amount_is
 from modules.boundary import IndoorBoundary, OutdoorBoundary
 from modules.state import State
 from modules.thermo_dynamics import ATP, get_wp
@@ -102,7 +102,7 @@ class TestHeatResidual:
         t_n_is = np.full(len(g.nodes), 20.0 + ATP)
         t_is = t_n_is + 1.0
         res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, outdoor=_outdoor(21.0 + ATP), indoor=_indoor(21.0 + ATP))
-        c_is = np.array([node.heat_capacity for node in g.nodes])
+        c_is = np.array([node.heat_capacity_dry for node in g.nodes])
         np.testing.assert_allclose(res_is, c_is * 1.0 / dt)
 
     def test_conservation(self):
@@ -113,7 +113,7 @@ class TestHeatResidual:
         t_is = np.linspace(6.0, 18.0, len(g.nodes)) + ATP
         t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
         res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
-        c_is = np.array([node.heat_capacity for node in g.nodes])
+        c_is = np.array([node.heat_capacity_dry for node in g.nodes])
         q_ks = heat_flow_ks(g, t_is, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         storage = (c_is * (t_is - t_n_is) / dt).sum()
         assert res_is.sum() == pytest.approx(storage - (q_ks[0] - q_ks[-1]))
@@ -268,3 +268,24 @@ class TestLiquidFlow:
         t = 20.0 + ATP
         t_is, mu_is = _uniform(g, t, 50.0)
         assert len(liquid_flow_ks(g, t_is, mu_is, outdoor=_outdoor(t), indoor=_indoor(t))) == len(g.links)
+
+
+class TestWaterAmountAndHeatCapacityIs:
+
+    def test_same_as_nodes(self):
+        # まとめて計算した値が、質点ごとのメソッドの値と一致する（通気層を含む壁）
+        g = _plywood_gw_geometry()
+        n = len(g.nodes)
+        t_is = np.linspace(5.0, 15.0, n) + ATP
+        mu_is = np.array([get_wp(rh=rh_i, t=t_i) for rh_i, t_i in zip(np.linspace(60.0, 90.0, n), t_is)])
+        states = [State(t=t_i, mu=mu_i) for t_i, mu_i in zip(t_is, mu_is)]
+        np.testing.assert_allclose(water_amount_is(g, t_is, mu_is), [node.water_amount(s) for node, s in zip(g.nodes, states)])
+        np.testing.assert_allclose(heat_capacity_is(g, t_is, mu_is), [node.heat_capacity(s) for node, s in zip(g.nodes, states)])
+
+    def test_total_water(self):
+        # 一様な 1 層の壁：水分量の合計 = 厚さ × 乾燥密度 × u(φ)
+        g = _one_layer_geometry()
+        t = 20.0 + ATP
+        t_is, mu_is = _uniform(g, t, 70.0)
+        m = g.nodes[0].material
+        assert water_amount_is(g, t_is, mu_is).sum() == pytest.approx(0.009 * m.rho * m.get_u(70.0))

@@ -6,7 +6,7 @@ from modules.direction import Direction
 from modules.material_loaders import load_materials
 from modules.materials import Materials
 from modules.state import State
-from modules.thermo_dynamics import ROW_CP, ATP
+from modules.thermo_dynamics import ATP, CPL, RG, ROW_CP
 from modules import wall_geometry
 from modules.wall_geometry import MaterialNode, AirNode, _make_nodes, _make_links, material_finder, Link, Interface, Surface, WallGeometry, Outdoor, Indoor, OUTDOOR, INDOOR
 from modules.wall_input import MaterialLayerInput, AirLayerInput, InterfaceInput, WallInput
@@ -32,7 +32,7 @@ class TestMaterialNode:
         # 幅 2 mm × 容積比熱
         m = _plywood()
         node = MaterialNode(d_left=0.001, d_right=0.001, material=m, layer_index=0)
-        assert node.heat_capacity == pytest.approx(0.002 * m.c * m.rho)
+        assert node.heat_capacity_dry == pytest.approx(0.002 * m.c * m.rho)
 
     @pytest.mark.parametrize('d_left, d_right', [
         (0.001, 0.001),   # 層の中
@@ -63,7 +63,7 @@ class TestAirNode:
         # 厚さ 25 mm、α = 0.085
         node = AirNode(thickness=0.025, alpha=0.085, layer_index=1)
         assert (node.width, node.alpha) == (0.025, 0.085)
-        assert node.heat_capacity == pytest.approx(0.025 * ROW_CP)
+        assert node.heat_capacity_dry == pytest.approx(0.025 * ROW_CP)
 
     def test_r_h(self):
         # よく混ざった空気なので、端までの熱抵抗は 0
@@ -499,3 +499,32 @@ class TestWallGeometry:
         with pytest.raises(ValueError, match='質点 0 番目'):
             WallGeometry(nodes=g.nodes, links=tuple(links), surface=g.surface,
                          len_vertical=g.len_vertical, len_horizontal=g.len_horizontal, height=g.height)
+
+
+class TestWaterAmountAndHeatCapacity:
+
+    def test_material_water_amount(self):
+        # 構造用合板1、20 deg.C・RH 50%：乾燥密度 × u(50%) × 幅
+        m = _plywood()
+        node = MaterialNode(d_left=0.0009, d_right=0.0009, material=m, layer_index=0)
+        state = _state(50.0)
+        assert node.water_amount(state) == pytest.approx(m.rho * m.get_u(50.0) * 0.0018)
+
+    def test_air_water_amount(self):
+        # 通気層 25 mm、20 deg.C・50%：水蒸気の密度 p_v / (R_v T) × 厚さ（約 0.0002 kg/m2）
+        node = AirNode(thickness=0.025, alpha=0.085, layer_index=1)
+        state = _state(50.0)
+        assert node.water_amount(state) == pytest.approx(state.p_v / (RG * state.t) * 0.025)
+        assert node.water_amount(state) == pytest.approx(0.0002, rel=0.1)
+
+    def test_material_heat_capacity(self):
+        # 乾燥した値 + 水の比熱 × 水分量
+        node = MaterialNode(d_left=0.0009, d_right=0.0009, material=_plywood(), layer_index=0)
+        state = _state(80.0)
+        assert node.heat_capacity(state) == pytest.approx(node.heat_capacity_dry + CPL * node.water_amount(state))
+        assert node.heat_capacity(state) > node.heat_capacity_dry
+
+    def test_air_heat_capacity(self):
+        # 空気の質点は、水蒸気の分を足さない（乾燥した値と同じ）
+        node = AirNode(thickness=0.025, alpha=0.085, layer_index=1)
+        assert node.heat_capacity(_state(80.0)) == node.heat_capacity_dry

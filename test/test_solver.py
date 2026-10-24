@@ -93,7 +93,7 @@ class TestStepHeat:
         dt = 180.0
         t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
         state, _ = step_heat(g, state_n, dt=dt, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
-        c_is = np.array([node.heat_capacity for node in g.nodes])
+        c_is = np.array([node.heat_capacity_dry for node in g.nodes])
         stored = (c_is * (state.t_is - state_n.t_is)).sum()
         q_ks = heat_flow_ks(g, state.t_is, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         assert stored == pytest.approx((q_ks[0] - q_ks[-1]) * dt, rel=1e-6)
