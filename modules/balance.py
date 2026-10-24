@@ -5,10 +5,16 @@
 
 import numpy as np
 
+from modules.boundary import IndoorBoundary, OutdoorBoundary
 from modules.wall_geometry import WallGeometry
 
 
-def heat_flow_ks(geometry: WallGeometry, t_is: np.ndarray, t_outdoor: float, t_indoor: float) -> np.ndarray:
+def heat_flow_ks(
+        geometry: WallGeometry,
+        t_is: np.ndarray,
+        outdoor: OutdoorBoundary,
+        indoor: IndoorBoundary
+    ) -> np.ndarray:
     """つながりごとの熱の流れ q_k, W/m2, [k]（外気側から室内側へ流れる向きを正）。
 
     q_k = (T_k^左 - T_k^右) / R_k。つながり k は質点 k - 1 と質点 k の間（0 番目は外気と質点 0、最後は最後の質点と室内）。
@@ -17,24 +23,30 @@ def heat_flow_ks(geometry: WallGeometry, t_is: np.ndarray, t_outdoor: float, t_i
     Args:
         geometry: 壁の形
         t_is: 各質点の温度, K, [i]
-        t_outdoor: 外気温, K
-        t_indoor: 室温, K
+        outdoor: 外気の境界条件（外気温 outdoor.state.t を使う）
+        indoor: 室内の境界条件（室温 indoor.state.t を使う）
     """
 
     # 各つながりの熱抵抗 R_k, (m2 K)/W, [k]
     r_h_ks = np.array([link.r_h for link in geometry.links])
 
     # つながり k の左の温度, K, [k]（0 番目は外気、それ以外は質点 k - 1）
-    t_left_ks = np.concatenate(([t_outdoor], t_is))
+    t_left_ks = np.concatenate(([outdoor.state.t], t_is))
 
     # つながり k の右の温度, K, [k]（最後は室内、それ以外は質点 k）
-    t_right_ks = np.concatenate((t_is, [t_indoor]))
+    t_right_ks = np.concatenate((t_is, [indoor.state.t]))
 
     return (t_left_ks - t_right_ks) / r_h_ks
 
 
-def heat_residual_is(geometry: WallGeometry, t_is: np.ndarray, t_n_is: np.ndarray, dt: float,
-                     t_outdoor: float, t_indoor: float) -> np.ndarray:
+def heat_residual_is(
+        geometry: WallGeometry,
+        t_is: np.ndarray,
+        t_n_is: np.ndarray,
+        dt: float,
+        outdoor: OutdoorBoundary,
+        indoor: IndoorBoundary
+    ) -> np.ndarray:
     """質点ごとの熱の収支の残差 res_i, W/m2, [i]。
 
     res_i = C_i (T_i - T_i^n) / Δt - (q_in,i - q_out,i)（たまる量 -（入ってくる熱 - 出ていく熱））。
@@ -47,15 +59,15 @@ def heat_residual_is(geometry: WallGeometry, t_is: np.ndarray, t_n_is: np.ndarra
         t_is: 各質点の次の時刻の温度（仮の値）, K, [i]
         t_n_is: 各質点の前の時刻（ステップ n）の温度, K, [i]
         dt: 時間刻み, s
-        t_outdoor: 次の時刻の外気温, K
-        t_indoor: 次の時刻の室温, K
+        outdoor: 次の時刻の外気の境界条件
+        indoor: 次の時刻の室内の境界条件
     """
 
     # 各質点の熱容量 C_i, J/(m2 K), [i]
     c_is = np.array([node.heat_capacity for node in geometry.nodes])
 
     # 各つながりの熱の流れ q_k, W/m2, [k]（次の時刻の温度で計算する：後退差分）
-    q_ks = heat_flow_ks(geometry, t_is, t_outdoor, t_indoor)
+    q_ks = heat_flow_ks(geometry, t_is, outdoor, indoor)
 
     # 質点 i の左のつながり（つながり i）から入ってくる熱, W/m2, [i]（q_ks の最後を除く）
     q_in_is = q_ks[:-1]

@@ -5,6 +5,7 @@
 """
 
 from modules.balance import heat_residual_is
+from modules.boundary import IndoorBoundary, OutdoorBoundary
 from modules.newton import newton_solve
 from modules.wall_geometry import WallGeometry
 from modules.wall_state import WallState
@@ -16,8 +17,13 @@ HEAT_BAND = (1, 1)
 HEAT_RESIDUAL_TOL = 1.0e-6
 
 
-def step_heat(geometry: WallGeometry, state_n: WallState, dt: float,
-              t_outdoor: float, t_indoor: float) -> tuple[WallState, int]:
+def step_heat(
+        geometry: WallGeometry,
+        state_n: WallState,
+        dt: float,
+        outdoor: OutdoorBoundary,
+        indoor: IndoorBoundary
+    ) -> tuple[WallState, int]:
     """熱だけを 1 ステップ進める（水分化学ポテンシャルは変えない）。
 
     次の時刻の温度は、熱の収支の残差が 0 になるように、ニュートン法で求める。最初の仮の値は前の時刻の温度。
@@ -27,8 +33,8 @@ def step_heat(geometry: WallGeometry, state_n: WallState, dt: float,
         geometry: 壁の形
         state_n: 前の時刻（ステップ n）の状態
         dt: 時間刻み, s
-        t_outdoor: 次の時刻の外気温, K
-        t_indoor: 次の時刻の室温, K
+        outdoor: 次の時刻の外気の境界条件
+        indoor: 次の時刻の室内の境界条件
 
     Returns:
         次の時刻（ステップ n + 1）の状態、ニュートン法で修正した回数
@@ -36,7 +42,7 @@ def step_heat(geometry: WallGeometry, state_n: WallState, dt: float,
 
     # 次の時刻の温度の仮の値 t_is を受け取って、熱の収支の残差を返す関数（この 1 ステップ専用。ほかの値は覚えておく）
     def residual(t_is):
-        return heat_residual_is(geometry, t_is, state_n.t_is, dt, t_outdoor, t_indoor)
+        return heat_residual_is(geometry, t_is, state_n.t_is, dt, outdoor, indoor)
 
     # 残差が 0 になる温度を、前の時刻の温度から探す
     t_is, m = newton_solve(residual, state_n.t_is, band=HEAT_BAND, tol=HEAT_RESIDUAL_TOL)

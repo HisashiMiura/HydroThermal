@@ -2,9 +2,21 @@ import numpy as np
 import pytest
 
 from modules.balance import heat_flow_ks, heat_residual_is
+from modules.boundary import IndoorBoundary, OutdoorBoundary
+from modules.state import State
 from modules.thermo_dynamics import ATP
 from modules.wall_geometry import WallGeometry
 from modules.wall_input import WallInput
+
+
+def _outdoor(t: float) -> OutdoorBoundary:
+    """外気温 t（K）の外気の境界条件（熱だけの計算なので、相対湿度は 50% とする）。"""
+    return OutdoorBoundary(state=State.init(t=t, rh=50.0))
+
+
+def _indoor(t: float) -> IndoorBoundary:
+    """室温 t（K）の室内の境界条件（相対湿度は 50%）。"""
+    return IndoorBoundary(state=State.init(t=t, rh=50.0))
 
 
 def _one_layer_geometry() -> WallGeometry:
@@ -26,7 +38,7 @@ class TestHeatFlow:
         # 外気・室内・全部の質点が 20 deg.C なら、熱は流れない
         g = _one_layer_geometry()
         t = 20.0 + ATP
-        q_ks = heat_flow_ks(g, np.full(len(g.nodes), t), t_outdoor=t, t_indoor=t)
+        q_ks = heat_flow_ks(g, np.full(len(g.nodes), t), outdoor=_outdoor(t), indoor=_indoor(t))
         np.testing.assert_allclose(q_ks, 0.0)
 
     def test_steady(self):
@@ -40,21 +52,21 @@ class TestHeatFlow:
         # 質点 i の温度 = 外気温 - q × (つながり 0〜i の熱抵抗の和)
         t_is = t_outdoor - q * np.cumsum(r_h_ks)[:-1]
 
-        q_ks = heat_flow_ks(g, t_is, t_outdoor=t_outdoor, t_indoor=t_indoor)
+        q_ks = heat_flow_ks(g, t_is, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         np.testing.assert_allclose(q_ks, q)
 
     def test_direction(self):
         # 外気のほうが温かければ、外気側から室内側へ（正の向きに）流れる
         g = _one_layer_geometry()
         t = 20.0 + ATP
-        q_ks = heat_flow_ks(g, np.full(len(g.nodes), t), t_outdoor=t + 10.0, t_indoor=t)
+        q_ks = heat_flow_ks(g, np.full(len(g.nodes), t), outdoor=_outdoor(t + 10.0), indoor=_indoor(t))
         assert q_ks[0] > 0.0
         assert q_ks[-1] == pytest.approx(0.0)
 
     def test_number(self):
         # 流れの数は、つながりの数（質点の数 + 1）
         g = _one_layer_geometry()
-        q_ks = heat_flow_ks(g, np.full(len(g.nodes), 293.15), t_outdoor=293.15, t_indoor=293.15)
+        q_ks = heat_flow_ks(g, np.full(len(g.nodes), 293.15), outdoor=_outdoor(293.15), indoor=_indoor(293.15))
         assert len(q_ks) == len(g.links) == len(g.nodes) + 1
 
 
@@ -72,7 +84,7 @@ class TestHeatResidual:
         g = _one_layer_geometry()
         t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
         t_is = _steady_t_is(g, t_outdoor, t_indoor)
-        res_is = heat_residual_is(g, t_is, t_is, dt=180.0, t_outdoor=t_outdoor, t_indoor=t_indoor)
+        res_is = heat_residual_is(g, t_is, t_is, dt=180.0, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         np.testing.assert_allclose(res_is, 0.0, atol=1e-9)
 
     def test_uniform(self):
@@ -80,7 +92,7 @@ class TestHeatResidual:
         g = _one_layer_geometry()
         t = 20.0 + ATP
         t_is = np.full(len(g.nodes), t)
-        res_is = heat_residual_is(g, t_is, t_is, dt=180.0, t_outdoor=t, t_indoor=t)
+        res_is = heat_residual_is(g, t_is, t_is, dt=180.0, outdoor=_outdoor(t), indoor=_indoor(t))
         np.testing.assert_allclose(res_is, 0.0)
 
     def test_storage_only(self):
@@ -89,7 +101,7 @@ class TestHeatResidual:
         dt = 180.0
         t_n_is = np.full(len(g.nodes), 20.0 + ATP)
         t_is = t_n_is + 1.0
-        res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, t_outdoor=21.0 + ATP, t_indoor=21.0 + ATP)
+        res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, outdoor=_outdoor(21.0 + ATP), indoor=_indoor(21.0 + ATP))
         c_is = np.array([node.heat_capacity for node in g.nodes])
         np.testing.assert_allclose(res_is, c_is * 1.0 / dt)
 
@@ -100,8 +112,8 @@ class TestHeatResidual:
         t_n_is = np.linspace(5.0, 15.0, len(g.nodes)) + ATP
         t_is = np.linspace(6.0, 18.0, len(g.nodes)) + ATP
         t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
-        res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, t_outdoor=t_outdoor, t_indoor=t_indoor)
+        res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         c_is = np.array([node.heat_capacity for node in g.nodes])
-        q_ks = heat_flow_ks(g, t_is, t_outdoor=t_outdoor, t_indoor=t_indoor)
+        q_ks = heat_flow_ks(g, t_is, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         storage = (c_is * (t_is - t_n_is) / dt).sum()
         assert res_is.sum() == pytest.approx(storage - (q_ks[0] - q_ks[-1]))

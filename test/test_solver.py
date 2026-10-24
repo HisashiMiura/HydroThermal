@@ -2,12 +2,24 @@ import numpy as np
 import pytest
 
 from modules.balance import heat_flow_ks
+from modules.boundary import IndoorBoundary, OutdoorBoundary
 from modules.solver import step_heat
+from modules.state import State
 from modules.thermo_dynamics import ATP, get_wp
 from modules.wall_builder import build_wall
 from modules.wall_geometry import WallGeometry
 from modules.wall_input import WallInput
 from modules.wall_state import WallState
+
+
+def _outdoor(t: float) -> OutdoorBoundary:
+    """外気温 t（K）の外気の境界条件（熱だけの計算なので、相対湿度は 50% とする）。"""
+    return OutdoorBoundary(state=State.init(t=t, rh=50.0))
+
+
+def _indoor(t: float) -> IndoorBoundary:
+    """室温 t（K）の室内の境界条件（相対湿度は 50%）。"""
+    return IndoorBoundary(state=State.init(t=t, rh=50.0))
 
 _SURFACE = {'direction': 'e', 'angle': 90.0, 'albedo': 0.3, 'absorptance': 0.9, 'emissivity': 0.9, 'eva_height': 4.2}
 
@@ -66,13 +78,13 @@ class TestStepHeat:
         # 外気・室内・壁がすべて 20 deg.C なら、1 ステップ進めても 20 deg.C のまま
         g, _ = _one_layer()
         state_n = _uniform_state(g, 20.0, 50.0)
-        state, _ = step_heat(g, state_n, dt=180.0, t_outdoor=20.0 + ATP, t_indoor=20.0 + ATP)
+        state, _ = step_heat(g, state_n, dt=180.0, outdoor=_outdoor(20.0 + ATP), indoor=_indoor(20.0 + ATP))
         np.testing.assert_allclose(state.theta_is, 20.0)
 
     def test_iterations(self):
         # 熱だけ（線形）なので、1〜2 回の修正で収束する
         g, state_n = _one_layer()
-        _, m = step_heat(g, state_n, dt=180.0, t_outdoor=0.0 + ATP, t_indoor=20.0 + ATP)
+        _, m = step_heat(g, state_n, dt=180.0, outdoor=_outdoor(0.0 + ATP), indoor=_indoor(20.0 + ATP))
         assert 1 <= m <= 2
 
     def test_conservation(self):
@@ -80,10 +92,10 @@ class TestStepHeat:
         g, state_n = _one_layer()
         dt = 180.0
         t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
-        state, _ = step_heat(g, state_n, dt=dt, t_outdoor=t_outdoor, t_indoor=t_indoor)
+        state, _ = step_heat(g, state_n, dt=dt, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         c_is = np.array([node.heat_capacity for node in g.nodes])
         stored = (c_is * (state.t_is - state_n.t_is)).sum()
-        q_ks = heat_flow_ks(g, state.t_is, t_outdoor=t_outdoor, t_indoor=t_indoor)
+        q_ks = heat_flow_ks(g, state.t_is, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         assert stored == pytest.approx((q_ks[0] - q_ks[-1]) * dt, rel=1e-6)
 
     def test_steady_one_layer(self):
@@ -91,7 +103,7 @@ class TestStepHeat:
         g, state = _one_layer()
         t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
         for _ in range(200):
-            state, _ = step_heat(g, state, dt=600.0, t_outdoor=t_outdoor, t_indoor=t_indoor)
+            state, _ = step_heat(g, state, dt=600.0, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         r_h_ks = np.array([link.r_h for link in g.links])
         q = (t_outdoor - t_indoor) / r_h_ks.sum()
         np.testing.assert_allclose(state.t_is, t_outdoor - q * np.cumsum(r_h_ks)[:-1], atol=1e-6)
@@ -101,12 +113,12 @@ class TestStepHeat:
         g, state = _main_wall()
         t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
         for _ in range(1000):
-            state, _ = step_heat(g, state, dt=3600.0, t_outdoor=t_outdoor, t_indoor=t_indoor)
-        q_ks = heat_flow_ks(g, state.t_is, t_outdoor=t_outdoor, t_indoor=t_indoor)
+            state, _ = step_heat(g, state, dt=3600.0, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
+        q_ks = heat_flow_ks(g, state.t_is, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
         np.testing.assert_allclose(q_ks, (t_outdoor - t_indoor) / _r_h_total(g), rtol=1e-6)
 
     def test_mu_unchanged(self):
         # 水分化学ポテンシャルは、前の時刻のまま
         g, state_n = _one_layer()
-        state, _ = step_heat(g, state_n, dt=180.0, t_outdoor=0.0 + ATP, t_indoor=20.0 + ATP)
+        state, _ = step_heat(g, state_n, dt=180.0, outdoor=_outdoor(0.0 + ATP), indoor=_indoor(20.0 + ATP))
         np.testing.assert_array_equal(state.mu_is, state_n.mu_is)
