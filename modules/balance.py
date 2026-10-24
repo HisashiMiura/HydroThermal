@@ -202,3 +202,48 @@ def heat_capacity_is(geometry: WallGeometry, t_is: np.ndarray, mu_is: np.ndarray
         node.heat_capacity(State(t=t_i, mu=mu_i))
         for node, t_i, mu_i in zip(geometry.nodes, t_is, mu_is)
     ])
+
+
+def moisture_residual_is(
+        geometry: WallGeometry,
+        t_is: np.ndarray,
+        mu_is: np.ndarray,
+        t_n_is: np.ndarray,
+        mu_n_is: np.ndarray,
+        dt: float,
+        outdoor: OutdoorBoundary,
+        indoor: IndoorBoundary
+    ) -> np.ndarray:
+    """質点ごとの水分の収支の残差 res_m,i, kg/(m2 s), [i]。
+
+    res_m,i = (W_i - W_i^n) / Δt - (j_in,i - j_out,i)（たまる量 -（入ってくる水分 - 出ていく水分））。
+    水分の流れ j = 水蒸気の流れ j_v + 液水の流れ j_l。たまる量を水分量の変化で書くので、水分量が厳密に保存される。
+    正しい次の時刻の温度・水分化学ポテンシャルを入れると 0 になる（docs/governing_equations.md の式 6.2）。
+
+    Args:
+        geometry: 壁の形
+        t_is: 各質点の次の時刻の温度（仮の値）, K, [i]
+        mu_is: 各質点の次の時刻の水分化学ポテンシャル（仮の値）, J/kg, [i]
+        t_n_is: 各質点の前の時刻（ステップ n）の温度, K, [i]
+        mu_n_is: 各質点の前の時刻の水分化学ポテンシャル, J/kg, [i]
+        dt: 時間刻み, s
+        outdoor: 次の時刻の外気の境界条件
+        indoor: 次の時刻の室内の境界条件
+    """
+
+    # 次の時刻と前の時刻の水分量, kg/m2, [i]
+    w_is = water_amount_is(geometry, t_is, mu_is)
+    w_n_is = water_amount_is(geometry, t_n_is, mu_n_is)
+
+    # 各つながりの水分の流れ（水蒸気 + 液水）, kg/(m2 s), [k]（次の時刻の値で計算する：後退差分）
+    j_ks = (vapour_flow_ks(geometry, t_is, mu_is, outdoor, indoor)
+            + liquid_flow_ks(geometry, t_is, mu_is, outdoor, indoor))
+
+    # 質点 i の左のつながり（つながり i）から入ってくる水分, kg/(m2 s), [i]（j_ks の最後を除く）
+    j_in_is = j_ks[:-1]
+
+    # 質点 i の右のつながり（つながり i + 1）へ出ていく水分, kg/(m2 s), [i]（j_ks の先頭を除く）
+    j_out_is = j_ks[1:]
+
+    # たまる量 -（入ってくる水分 - 出ていく水分）
+    return (w_is - w_n_is) / dt - (j_in_is - j_out_is)
