@@ -6,6 +6,7 @@
 import numpy as np
 
 from modules.boundary import IndoorBoundary, OutdoorBoundary
+from modules.state import State
 from modules.wall_geometry import WallGeometry
 
 
@@ -77,3 +78,46 @@ def heat_residual_is(
 
     # たまる量 -（入ってくる熱 - 出ていく熱）
     return c_is * (t_is - t_n_is) / dt - (q_in_is - q_out_is)
+
+
+def vapour_flow_ks(
+        geometry: WallGeometry,
+        t_is: np.ndarray,
+        mu_is: np.ndarray,
+        outdoor: OutdoorBoundary,
+        indoor: IndoorBoundary
+    ) -> np.ndarray:
+    """つながりごとの水蒸気の流れ j_v,k, kg/(m2 s), [k]（外気側から室内側へ流れる向きを正）。
+
+    j_v,k = (p_v,左 - p_v,右) / R_m,k（docs/governing_equations.md の式 6.1）。
+    水蒸気圧は、質点の温度と水分化学ポテンシャルから p_v = φ p_sat(T)、φ = exp(μ / (R_v T)) で求める（偏微分に分けない）。
+    透湿抵抗は、左右それぞれの側の状態（相対湿度）で計算する。
+
+    Args:
+        geometry: 壁の形
+        t_is: 各質点の温度, K, [i]
+        mu_is: 各質点の水分化学ポテンシャル, J/kg, [i]
+        outdoor: 外気の境界条件
+        indoor: 室内の境界条件
+    """
+
+    # 各質点の 1 点の状態, [i]
+    state_is = [State(t=t_i, mu=mu_i) for t_i, mu_i in zip(t_is, mu_is)]
+
+    # つながり k の左の状態, [k]（0 番目は外気、それ以外は質点 k - 1）
+    state_left_ks = [outdoor.state] + state_is
+
+    # つながり k の右の状態, [k]（最後は室内、それ以外は質点 k）
+    state_right_ks = state_is + [indoor.state]
+
+    # つながり k の左右の水蒸気圧, Pa, [k]
+    p_v_left_ks = np.array([s.p_v for s in state_left_ks])
+    p_v_right_ks = np.array([s.p_v for s in state_right_ks])
+
+    # 各つながりの透湿抵抗 R_m,k, (m2 s Pa)/kg, [k]（左右それぞれの側の状態で計算する）
+    r_m_ks = np.array([
+        link.r_m(s_left, s_right)
+        for link, s_left, s_right in zip(geometry.links, state_left_ks, state_right_ks)
+    ])
+
+    return (p_v_left_ks - p_v_right_ks) / r_m_ks
