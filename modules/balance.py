@@ -80,6 +80,28 @@ def heat_residual_is(
     return c_is * (t_is - t_n_is) / dt - (q_in_is - q_out_is)
 
 
+def _state_left_right_ks(
+        t_is: np.ndarray,
+        mu_is: np.ndarray,
+        outdoor: OutdoorBoundary,
+        indoor: IndoorBoundary
+    ) -> tuple[list[State], list[State]]:
+    """つながり k の左の状態と右の状態の並び, [k]（左の 0 番目は外気、右の最後は室内）。
+
+    Args:
+        t_is: 各質点の温度, K, [i]
+        mu_is: 各質点の水分化学ポテンシャル, J/kg, [i]
+        outdoor: 外気の境界条件
+        indoor: 室内の境界条件
+    """
+
+    # 各質点の 1 点の状態, [i]
+    state_is = [State(t=t_i, mu=mu_i) for t_i, mu_i in zip(t_is, mu_is)]
+
+    # つながり k の左は質点 k - 1（0 番目は外気）、右は質点 k（最後は室内）
+    return [outdoor.state] + state_is, state_is + [indoor.state]
+
+
 def vapour_flow_ks(
         geometry: WallGeometry,
         t_is: np.ndarray,
@@ -101,14 +123,8 @@ def vapour_flow_ks(
         indoor: 室内の境界条件
     """
 
-    # 各質点の 1 点の状態, [i]
-    state_is = [State(t=t_i, mu=mu_i) for t_i, mu_i in zip(t_is, mu_is)]
-
-    # つながり k の左の状態, [k]（0 番目は外気、それ以外は質点 k - 1）
-    state_left_ks = [outdoor.state] + state_is
-
-    # つながり k の右の状態, [k]（最後は室内、それ以外は質点 k）
-    state_right_ks = state_is + [indoor.state]
+    # つながり k の左の状態と右の状態, [k]（左の 0 番目は外気、右の最後は室内）
+    state_left_ks, state_right_ks = _state_left_right_ks(t_is, mu_is, outdoor, indoor)
 
     # つながり k の左右の水蒸気圧, Pa, [k]
     p_v_left_ks = np.array([s.p_v for s in state_left_ks])
@@ -121,3 +137,40 @@ def vapour_flow_ks(
     ])
 
     return (p_v_left_ks - p_v_right_ks) / r_m_ks
+
+
+def liquid_flow_ks(
+        geometry: WallGeometry,
+        t_is: np.ndarray,
+        mu_is: np.ndarray,
+        outdoor: OutdoorBoundary,
+        indoor: IndoorBoundary
+    ) -> np.ndarray:
+    """つながりごとの液水の流れ j_l,k, kg/(m2 s), [k]（外気側から室内側へ流れる向きを正）。
+
+    j_l,k = (μ_左 - μ_右) / R_l,k（docs/governing_equations.md の式 6.1）。
+    境目（表面・層と層・材料と通気層）と、液相水分伝導率が 0 の所では、液水の抵抗が無限大なので流れは 0。
+
+    Args:
+        geometry: 壁の形
+        t_is: 各質点の温度, K, [i]
+        mu_is: 各質点の水分化学ポテンシャル, J/kg, [i]
+        outdoor: 外気の境界条件
+        indoor: 室内の境界条件
+    """
+
+    # つながり k の左の状態と右の状態, [k]
+    state_left_ks, state_right_ks = _state_left_right_ks(t_is, mu_is, outdoor, indoor)
+
+    # つながり k の左右の水分化学ポテンシャル, J/kg, [k]
+    mu_left_ks = np.array([s.mu for s in state_left_ks])
+    mu_right_ks = np.array([s.mu for s in state_right_ks])
+
+    # 各つながりの液水の抵抗 R_l,k, (m2 s (J/kg))/kg, [k]（境目と、液相水分伝導率が 0 の所では無限大）
+    r_l_ks = np.array([
+        link.r_l(s_left, s_right)
+        for link, s_left, s_right in zip(geometry.links, state_left_ks, state_right_ks)
+    ])
+
+    # 抵抗が無限大のつながりは、差 / 無限大 = 0
+    return (mu_left_ks - mu_right_ks) / r_l_ks

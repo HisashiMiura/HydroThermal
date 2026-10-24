@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from modules.balance import heat_flow_ks, heat_residual_is, vapour_flow_ks
+from modules.balance import heat_flow_ks, heat_residual_is, liquid_flow_ks, vapour_flow_ks
 from modules.boundary import IndoorBoundary, OutdoorBoundary
 from modules.state import State
 from modules.thermo_dynamics import ATP, get_wp
@@ -201,3 +201,70 @@ class TestVapourFlow:
         t_is, mu_is = _uniform(g, t, 50.0)
         j_v_ks = vapour_flow_ks(g, t_is, mu_is, outdoor=_outdoor(t), indoor=_indoor(t))
         assert len(j_v_ks) == len(g.links)
+
+
+def _plywood_gw_geometry() -> WallGeometry:
+    """2 層の壁：構造用合板1 9 mm（分割数 6）＋ グラスウール1 100 mm（分割数 5）、接触 50・7.75e-7。"""
+    m = {'source': 'whamcavity', 'initial_temperature': 20.0, 'initial_rh': 50.0}
+    return WallGeometry.from_input(WallInput.from_dict({
+        'surface': {'direction': 'e', 'angle': 90.0, 'albedo': 0.3, 'absorptance': 0.9, 'emissivity': 0.9, 'eva_height': 4.2},
+        'layers': [m | {'name': '構造用合板1', 'thickness': 0.009, 'n_div': 6},
+                   m | {'name': 'グラスウール1', 'thickness': 0.1, 'n_div': 5}],
+        'interfaces': [{'cond_h': 22.4, 'cond_m': 2.0e-11}, {'cond_h': 50.0, 'cond_m': 7.75e-7}, {'cond_h': 9.2, 'cond_m': 2.6e-10}],
+        'len_vertical': 1.0,
+        'len_horizontal': 1.0,
+        'height': 1.0,
+    }))
+
+
+def _mu_is(t: float, rh_is: np.ndarray) -> np.ndarray:
+    """温度 t（K）一定で、相対湿度 rh_is（%）の質点の水分化学ポテンシャル, J/kg, [i]。"""
+    return np.array([get_wp(rh=rh_i, t=t) for rh_i in rh_is])
+
+
+class TestLiquidFlow:
+
+    def test_interface(self):
+        # 合板 + GW の 2 層：湿度が高く μ に差があっても、境目（表面・層と層）のつながりの液水の流れは 0
+        g = _plywood_gw_geometry()
+        t = 20.0 + ATP
+        rh_is = np.linspace(99.5, 98.0, len(g.nodes))
+        j_l_ks = liquid_flow_ks(g, np.full(len(g.nodes), t), _mu_is(t, rh_is),
+                                outdoor=OutdoorBoundary(state=State.init(t=t, rh=100.0)),
+                                indoor=IndoorBoundary(state=State.init(t=t, rh=50.0)))
+        # 境目のつながり：0 番目（外表面）、6 番目（合板と GW の間）、最後（内表面）
+        for k in (0, 6, len(g.links) - 1):
+            assert j_l_ks[k] == 0.0
+
+    def test_no_liquid(self):
+        # 構造用合板1 は RH 50% 前後では液水が動かない：μ に差があっても、すべてのつながりで 0
+        g = _one_layer_geometry()
+        t = 20.0 + ATP
+        rh_is = np.linspace(55.0, 45.0, len(g.nodes))
+        j_l_ks = liquid_flow_ks(g, np.full(len(g.nodes), t), _mu_is(t, rh_is), outdoor=_outdoor(t), indoor=_indoor(t))
+        np.testing.assert_array_equal(j_l_ks, 0.0)
+
+    def test_liquid(self):
+        # 構造用合板1、外気側の質点 RH 99.5% → 室内側 98%：層の中で湿った側から乾いた側へ（正の向きに）流れる
+        g = _one_layer_geometry()
+        t = 20.0 + ATP
+        n = len(g.nodes)
+        mu_is = _mu_is(t, np.linspace(99.5, 98.0, n))
+        t_is = np.full(n, t)
+        outdoor, indoor = _outdoor(t), _indoor(t)
+        j_l_ks = liquid_flow_ks(g, t_is, mu_is, outdoor=outdoor, indoor=indoor)
+
+        # 層の中のつながり（1〜n-1 番目）は正の向きに流れ、値は (μ_左 - μ_右) / link.r_l(左, 右)
+        for k in range(1, n):
+            left, right = State(t=t, mu=mu_is[k - 1]), State(t=t, mu=mu_is[k])
+            assert j_l_ks[k] > 0.0
+            assert j_l_ks[k] == pytest.approx((left.mu - right.mu) / g.links[k].r_l(left, right))
+
+        # 表面のつながりは 0
+        assert (j_l_ks[0], j_l_ks[-1]) == (0.0, 0.0)
+
+    def test_number(self):
+        g = _one_layer_geometry()
+        t = 20.0 + ATP
+        t_is, mu_is = _uniform(g, t, 50.0)
+        assert len(liquid_flow_ks(g, t_is, mu_is, outdoor=_outdoor(t), indoor=_indoor(t))) == len(g.links)
