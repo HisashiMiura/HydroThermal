@@ -34,6 +34,7 @@ def step(
 
     未知数を (T_0, μ_0, T_1, μ_1, …) と並べ、熱と水分の残差をそれぞれの許容値で割って（許容値の何倍かにして）、
     交互に並べた残差が 0 になるように、ニュートン法で求める（許容値 1）。最初の仮の値は前の時刻の状態。
+    最初の仮の値の残差が許容値より小さくても、1 回は修正する（平衡の近くで、1 ステップの変化が小さいと進まなくなるのを防ぐ）。
     μ ≤ 0（相対湿度 100% 以下）を守る仕組みは、まだ入れていない（段階 5-8）。
 
     Args:
@@ -67,7 +68,7 @@ def step(
     x0_ps = np.empty(2 * len(state_n))
     x0_ps[0::2], x0_ps[1::2] = state_n.t_is, state_n.mu_is
 
-    # 残差が 0（許容値の 1 倍以下）になる未知数を探す
-    x_ps, m = newton_solve(residual, x0_ps, band=HEAT_MOISTURE_BAND, tol=1.0)
+    # 残差が 0（許容値の 1 倍以下）になる未知数を探す（1 回は必ず修正する）
+    x_ps, m = newton_solve(residual, x0_ps, band=HEAT_MOISTURE_BAND, tol=1.0, min_iter=1)
 
     return WallState(t_is=x_ps[0::2], mu_is=x_ps[1::2]), m

@@ -71,10 +71,17 @@ class NewtonNotConverged(RuntimeError):
     """ニュートン法が、決めた回数のうちに収束しなかった（またはヤコビ行列が解けなかった）。"""
 
 
-def newton_solve(f: Residual, x0_ps: np.ndarray, band: tuple[int, int], tol: float, max_iter: int = 20) -> tuple[np.ndarray, int]:
+def newton_solve(
+        f: Residual,
+        x0_ps: np.ndarray,
+        band: tuple[int, int],
+        tol: float,
+        max_iter: int = 20,
+        min_iter: int = 0
+    ) -> tuple[np.ndarray, int]:
     """ニュートン・ラフソン法で、残差 F(x) = 0 となる x を求める。
 
-    m 回目：残差 F と帯のヤコビ行列 J を作り、残差のいちばん大きいものが tol 以下なら終わる。
+    m 回目：残差 F と帯のヤコビ行列 J を作り、min_iter 回以上修正していて、残差のいちばん大きいものが tol 以下なら終わる。
     そうでなければ、J Δx = -F を帯行列の直接法で解いて、x を x + Δx に更新する。
 
     Args:
@@ -83,6 +90,7 @@ def newton_solve(f: Residual, x0_ps: np.ndarray, band: tuple[int, int], tol: flo
         band: ヤコビ行列の帯の幅 (対角の下の本数 l, 上の本数 u)。熱だけなら (1, 1)
         tol: 残差の許容値（残差と同じ単位。熱なら W/m2）
         max_iter: 修正の回数の上限
+        min_iter: 修正の回数の下限（最初の仮の値の残差が tol 以下でも、この回数は修正する）
 
     Returns:
         答え x_ps, [p]、修正した回数
@@ -98,8 +106,8 @@ def newton_solve(f: Residual, x0_ps: np.ndarray, band: tuple[int, int], tol: flo
         # 残差と帯のヤコビ行列
         f_ps, ab = _banded_jacobian(f, x_ps, band)
 
-        # 残差のいちばん大きいものが許容値以下なら、答え（ここまでに m 回修正した）
-        if np.max(np.abs(f_ps)) <= tol:
+        # 下限の回数まで修正していて、残差のいちばん大きいものが許容値以下なら、答え（ここまでに m 回修正した）
+        if m >= min_iter and np.max(np.abs(f_ps)) <= tol:
             return x_ps, m
 
         # 修正の回数の上限に達していたら、ここで止める（下で例外を出す）

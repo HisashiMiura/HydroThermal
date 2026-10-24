@@ -107,8 +107,7 @@ class TestStep:
 
     def test_absorption(self):
         # 構造用合板1 の 1 層、20 deg.C 一定、初期 50%、外気・室内とも 70%。
-        # 1 年（Δt = 1 日）進めると、どの質点も 70% になり、水分量の増えた分が、吸った水分の合計と一致する。
-        # 平衡の近くでは、1 ステップの変化が許容値より小さくなって止まるので、70% との差は 1e-3% まで許す
+        # 1 年（Δt = 1 日）進めると、どの質点も 70% になり、水分量の増えた分が、吸った水分の合計と一致する
         g, state_0 = _one_layer('構造用合板1', 0.009, 6, 20.0, 50.0)
         outdoor, indoor = _outdoor(20.0, 70.0), _indoor(20.0, 70.0)
         dt, n_steps = 86400.0, 365
@@ -117,7 +116,7 @@ class TestStep:
             state, _ = step(g, state, dt=dt, outdoor=outdoor, indoor=indoor)
             j_ks = _moisture_flow_ks(g, state, outdoor, indoor)
             absorbed += (j_ks[0] - j_ks[-1]) * dt
-        np.testing.assert_allclose(state.rh_is, 70.0, atol=1e-3)
+        np.testing.assert_allclose(state.rh_is, 70.0, atol=1e-4)
         np.testing.assert_allclose(state.theta_is, 20.0, atol=1e-6)
         w_increase = (water_amount_is(g, state.t_is, state.mu_is) - water_amount_is(g, state_0.t_is, state_0.mu_is)).sum()
         assert w_increase > 0.0

@@ -107,6 +107,15 @@ class TestNewtonSolve:
         assert m == 0
         np.testing.assert_allclose(x_ps, x_star)
 
+    def test_min_iter(self):
+        # 最初の仮の値の残差が許容値以下でも、min_iter = 1 なら 1 回は修正する
+        n = 10
+        x_star = np.linspace(1.0, 2.0, n)
+        b_ps = _cubic(np.zeros(n))(x_star)
+        x_ps, m = newton_solve(_cubic(b_ps), x_star + 1e-12, band=(1, 1), tol=1e-10, min_iter=1)
+        assert m == 1
+        np.testing.assert_allclose(x_ps, x_star, rtol=0.0, atol=1e-14)
+
     def test_not_converged(self):
         # 答えのない式 x_p^2 + 1 = 0 は収束しない
         with pytest.raises(NewtonNotConverged):
