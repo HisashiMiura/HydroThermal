@@ -7,6 +7,7 @@ import numpy as np
 
 from modules.boundary import IndoorBoundary, OutdoorBoundary
 from modules.state import State
+from modules.thermo_dynamics import RW
 from modules.wall_geometry import WallGeometry
 
 
@@ -38,46 +39,6 @@ def heat_flow_ks(
     t_right_ks = np.concatenate((t_is, [indoor.state.t]))
 
     return (t_left_ks - t_right_ks) / r_h_ks
-
-
-def heat_residual_is(
-        geometry: WallGeometry,
-        t_is: np.ndarray,
-        t_n_is: np.ndarray,
-        dt: float,
-        outdoor: OutdoorBoundary,
-        indoor: IndoorBoundary
-    ) -> np.ndarray:
-    """質点ごとの熱の収支の残差 res_i, W/m2, [i]。
-
-    res_i = C_i (T_i - T_i^n) / Δt - (q_in,i - q_out,i)（たまる量 -（入ってくる熱 - 出ていく熱））。
-    q_in,i = q_i（質点 i の左のつながり i から入ってくる熱）、q_out,i = q_(i+1)（右のつながり i + 1 へ出ていく熱）。
-    「入る」「出る」は外気側から室内側へ流れる向きで見た言い方で、q が負のときも式はそのまま正しく働く。
-    正しい次の時刻の温度を入れると 0 になる。ニュートン法で 0 になる T を探す。
-
-    Args:
-        geometry: 壁の形
-        t_is: 各質点の次の時刻の温度（仮の値）, K, [i]
-        t_n_is: 各質点の前の時刻（ステップ n）の温度, K, [i]
-        dt: 時間刻み, s
-        outdoor: 次の時刻の外気の境界条件
-        indoor: 次の時刻の室内の境界条件
-    """
-
-    # 各質点の熱容量 C_i, J/(m2 K), [i]（熱だけの段階では乾燥した値。水の分は熱と水分を一緒に解くとき（5-6）に足す）
-    c_is = np.array([node.heat_capacity_dry for node in geometry.nodes])
-
-    # 各つながりの熱の流れ q_k, W/m2, [k]（次の時刻の温度で計算する：後退差分）
-    q_ks = heat_flow_ks(geometry, t_is, outdoor, indoor)
-
-    # 質点 i の左のつながり（つながり i）から入ってくる熱, W/m2, [i]（q_ks の最後を除く）
-    q_in_is = q_ks[:-1]
-
-    # 質点 i の右のつながり（つながり i + 1）へ出ていく熱, W/m2, [i]（q_ks の先頭を除く）
-    q_out_is = q_ks[1:]
-
-    # たまる量 -（入ってくる熱 - 出ていく熱）
-    return c_is * (t_is - t_n_is) / dt - (q_in_is - q_out_is)
 
 
 def _state_left_right_ks(
@@ -247,3 +208,46 @@ def moisture_residual_is(
 
     # たまる量 -（入ってくる水分 - 出ていく水分）
     return (w_is - w_n_is) / dt - (j_in_is - j_out_is)
+
+
+def heat_residual_is(
+        geometry: WallGeometry,
+        t_is: np.ndarray,
+        mu_is: np.ndarray,
+        t_n_is: np.ndarray,
+        dt: float,
+        outdoor: OutdoorBoundary,
+        indoor: IndoorBoundary
+    ) -> np.ndarray:
+    """質点ごとの熱の収支の残差 res_h,i, W/m2, [i]（docs/governing_equations.md の式 6.3）。
+
+    res_h,i = C_i (T_i - T_i^n) / Δt - (Q_in,i - Q_out,i)（たまる量 -（入ってくる熱 - 出ていく熱））。
+    つながりの熱の流れ Q_k = q_k + r j_v,k（熱伝導 + 水蒸気が運ぶ潜熱）。r は蒸発潜熱。
+    C_i は水の分を足した熱容量で、次の時刻の仮の値で計算する。液水が運ぶ顕熱は入れない（量が非常に小さい）。
+    「入る」「出る」は外気側から室内側へ流れる向きで見た言い方で、流れが負のときも式はそのまま正しく働く。
+    正しい次の時刻の温度・水分化学ポテンシャルを入れると 0 になる。
+
+    Args:
+        geometry: 壁の形
+        t_is: 各質点の次の時刻の温度（仮の値）, K, [i]
+        mu_is: 各質点の次の時刻の水分化学ポテンシャル（仮の値）, J/kg, [i]
+        t_n_is: 各質点の前の時刻（ステップ n）の温度, K, [i]
+        dt: 時間刻み, s
+        outdoor: 次の時刻の外気の境界条件
+        indoor: 次の時刻の室内の境界条件
+    """
+
+    # 各質点の熱容量 C_i, J/(m2 K), [i]（乾燥した材料 + 含まれる水。次の時刻の仮の値で計算する）
+    c_is = heat_capacity_is(geometry, t_is, mu_is)
+
+    # 各つながりの熱の流れ（熱伝導 + 水蒸気が運ぶ潜熱）, W/m2, [k]（次の時刻の値で計算する：後退差分）
+    q_ks = heat_flow_ks(geometry, t_is, outdoor, indoor) + RW * vapour_flow_ks(geometry, t_is, mu_is, outdoor, indoor)
+
+    # 質点 i の左のつながり（つながり i）から入ってくる熱, W/m2, [i]（q_ks の最後を除く）
+    q_in_is = q_ks[:-1]
+
+    # 質点 i の右のつながり（つながり i + 1）へ出ていく熱, W/m2, [i]（q_ks の先頭を除く）
+    q_out_is = q_ks[1:]
+
+    # たまる量 -（入ってくる熱 - 出ていく熱）
+    return c_is * (t_is - t_n_is) / dt - (q_in_is - q_out_is)

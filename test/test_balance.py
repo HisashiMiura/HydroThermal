@@ -4,7 +4,7 @@ import pytest
 from modules.balance import heat_capacity_is, heat_flow_ks, heat_residual_is, liquid_flow_ks, moisture_residual_is, vapour_flow_ks, water_amount_is
 from modules.boundary import IndoorBoundary, OutdoorBoundary
 from modules.state import State
-from modules.thermo_dynamics import ATP, get_wp
+from modules.thermo_dynamics import ATP, RW, get_wp
 from modules.wall_geometry import WallGeometry
 from modules.wall_input import WallInput
 
@@ -68,55 +68,6 @@ class TestHeatFlow:
         g = _one_layer_geometry()
         q_ks = heat_flow_ks(g, np.full(len(g.nodes), 293.15), outdoor=_outdoor(293.15), indoor=_indoor(293.15))
         assert len(q_ks) == len(g.links) == len(g.nodes) + 1
-
-
-def _steady_t_is(g: WallGeometry, t_outdoor: float, t_indoor: float) -> np.ndarray:
-    """定常の温度分布（熱抵抗に比例した直線）, K, [i]。"""
-    r_h_ks = np.array([link.r_h for link in g.links])
-    q = (t_outdoor - t_indoor) / r_h_ks.sum()
-    return t_outdoor - q * np.cumsum(r_h_ks)[:-1]
-
-
-class TestHeatResidual:
-
-    def test_steady(self):
-        # 定常の温度分布を前の時刻と次の時刻の両方に入れると、残差は 0（たまる量も、正味の熱も 0）
-        g = _one_layer_geometry()
-        t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
-        t_is = _steady_t_is(g, t_outdoor, t_indoor)
-        res_is = heat_residual_is(g, t_is, t_is, dt=180.0, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
-        np.testing.assert_allclose(res_is, 0.0, atol=1e-9)
-
-    def test_uniform(self):
-        # すべて 20 deg.C のままなら、残差は 0
-        g = _one_layer_geometry()
-        t = 20.0 + ATP
-        t_is = np.full(len(g.nodes), t)
-        res_is = heat_residual_is(g, t_is, t_is, dt=180.0, outdoor=_outdoor(t), indoor=_indoor(t))
-        np.testing.assert_allclose(res_is, 0.0)
-
-    def test_storage_only(self):
-        # 次の時刻はすべて 21 deg.C、前の時刻は 20 deg.C：熱は流れず、残差 = C_i × 1 K / Δt
-        g = _one_layer_geometry()
-        dt = 180.0
-        t_n_is = np.full(len(g.nodes), 20.0 + ATP)
-        t_is = t_n_is + 1.0
-        res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, outdoor=_outdoor(21.0 + ATP), indoor=_indoor(21.0 + ATP))
-        c_is = np.array([node.heat_capacity_dry for node in g.nodes])
-        np.testing.assert_allclose(res_is, c_is * 1.0 / dt)
-
-    def test_conservation(self):
-        # 残差の合計 = たまる量の合計 -（外気から入る熱 q_0 - 室内へ出る熱 q_N）。中のつながりの熱は打ち消し合う
-        g = _one_layer_geometry()
-        dt = 180.0
-        t_n_is = np.linspace(5.0, 15.0, len(g.nodes)) + ATP
-        t_is = np.linspace(6.0, 18.0, len(g.nodes)) + ATP
-        t_outdoor, t_indoor = 0.0 + ATP, 20.0 + ATP
-        res_is = heat_residual_is(g, t_is, t_n_is, dt=dt, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
-        c_is = np.array([node.heat_capacity_dry for node in g.nodes])
-        q_ks = heat_flow_ks(g, t_is, outdoor=_outdoor(t_outdoor), indoor=_indoor(t_indoor))
-        storage = (c_is * (t_is - t_n_is) / dt).sum()
-        assert res_is.sum() == pytest.approx(storage - (q_ks[0] - q_ks[-1]))
 
 
 def _plywood2_geometry() -> WallGeometry:
@@ -347,3 +298,75 @@ class TestMoistureResidual:
         storage = ((water_amount_is(g, t_is, mu_is) - water_amount_is(g, t_n_is, mu_n_is)) / dt).sum()
         j_ks = vapour_flow_ks(g, t_is, mu_is, outdoor, indoor) + liquid_flow_ks(g, t_is, mu_is, outdoor, indoor)
         assert res_is.sum() == pytest.approx(storage - (j_ks[0] - j_ks[-1]), rel=1e-9, abs=1e-18)
+
+
+class TestHeatResidual:
+
+    def test_uniform(self):
+        # すべて 20 deg.C・50% のまま（前の時刻も同じ）なら、残差は 0
+        g = _one_layer_geometry()
+        t = 20.0 + ATP
+        t_is, mu_is = _uniform(g, t, 50.0)
+        res_is = heat_residual_is(g, t_is, mu_is, t_is, dt=180.0, outdoor=_outdoor(t), indoor=_indoor(t))
+        np.testing.assert_allclose(res_is, 0.0, atol=1e-12)
+
+    def test_formula(self):
+        # 残差 = C_i (T_i - T_i^n)/Δt -（(q + r j_v)_入 -（q + r j_v)_出）を、別に計算した値と比べる
+        g = _plywood_gw_geometry()
+        n = len(g.nodes)
+        dt = 180.0
+        t_n_is = np.linspace(5.0, 15.0, n) + ATP
+        t_is = np.linspace(6.0, 16.0, n) + ATP
+        mu_is = np.array([get_wp(rh=rh_i, t=t_i) for rh_i, t_i in zip(np.linspace(90.0, 60.0, n), t_is)])
+        outdoor = OutdoorBoundary(state=State.init(t=0.0 + ATP, rh=90.0))
+        indoor = IndoorBoundary(state=State.init(t=20.0 + ATP, rh=50.0))
+        res_is = heat_residual_is(g, t_is, mu_is, t_n_is, dt=dt, outdoor=outdoor, indoor=indoor)
+        q_ks = heat_flow_ks(g, t_is, outdoor, indoor) + RW * vapour_flow_ks(g, t_is, mu_is, outdoor, indoor)
+        expected = heat_capacity_is(g, t_is, mu_is) * (t_is - t_n_is) / dt - (q_ks[:-1] - q_ks[1:])
+        np.testing.assert_allclose(res_is, expected)
+
+    def test_latent_heat(self):
+        # 温度は一様で変わらず、水蒸気が質点に入ってたまる（入る > 出る）と、潜熱の分だけ残差が負（熱が出て温まる向き）
+        g = _one_layer_geometry()
+        t = 20.0 + ATP
+        n = len(g.nodes)
+        t_is = np.full(n, t)
+        # 外気・室内は 80%、壁の中は 50%：水蒸気が両側から入ってくる
+        mu_is = np.full(n, get_wp(rh=50.0, t=t))
+        outdoor = OutdoorBoundary(state=State.init(t=t, rh=80.0))
+        indoor = IndoorBoundary(state=State.init(t=t, rh=80.0))
+        res_is = heat_residual_is(g, t_is, mu_is, t_is, dt=180.0, outdoor=outdoor, indoor=indoor)
+        j_v_ks = vapour_flow_ks(g, t_is, mu_is, outdoor, indoor)
+        # 熱伝導は 0 なので、残差 = -r ×（入ってくる水蒸気 - 出ていく水蒸気）
+        np.testing.assert_allclose(res_is, -RW * (j_v_ks[:-1] - j_v_ks[1:]))
+        assert res_is[0] < 0.0 and res_is[-1] < 0.0
+
+    def test_heat_capacity_with_water(self):
+        # 温度だけを 1 K 上げる（外気・室内も同じ温度・相対湿度で、熱も水分も流れない）：たまる量 = 水の分を足した熱容量 × 1 K / Δt
+        g = _one_layer_geometry()
+        dt = 180.0
+        t_n = 20.0 + ATP
+        t = t_n + 1.0
+        t_is, mu_is = _uniform(g, t, 80.0)
+        t_n_is = np.full(len(g.nodes), t_n)
+        outdoor = OutdoorBoundary(state=State.init(t=t, rh=80.0))
+        indoor = IndoorBoundary(state=State.init(t=t, rh=80.0))
+        res_is = heat_residual_is(g, t_is, mu_is, t_n_is, dt=dt, outdoor=outdoor, indoor=indoor)
+        c_is = heat_capacity_is(g, t_is, mu_is)
+        np.testing.assert_allclose(res_is, c_is * 1.0 / dt, rtol=1e-9)
+        assert np.all(c_is > np.array([node.heat_capacity_dry for node in g.nodes]))
+
+    def test_conservation(self):
+        # 残差の合計 = たまる量の合計 -（外気から入る熱 - 室内へ出る熱）。熱には潜熱を含める
+        g = _plywood_gw_geometry()
+        n = len(g.nodes)
+        dt = 180.0
+        t_n_is = np.linspace(5.0, 15.0, n) + ATP
+        t_is = np.linspace(6.0, 18.0, n) + ATP
+        mu_is = np.array([get_wp(rh=rh_i, t=t_i) for rh_i, t_i in zip(np.linspace(90.0, 60.0, n), t_is)])
+        outdoor = OutdoorBoundary(state=State.init(t=0.0 + ATP, rh=90.0))
+        indoor = IndoorBoundary(state=State.init(t=20.0 + ATP, rh=50.0))
+        res_is = heat_residual_is(g, t_is, mu_is, t_n_is, dt=dt, outdoor=outdoor, indoor=indoor)
+        storage = (heat_capacity_is(g, t_is, mu_is) * (t_is - t_n_is) / dt).sum()
+        q_ks = heat_flow_ks(g, t_is, outdoor, indoor) + RW * vapour_flow_ks(g, t_is, mu_is, outdoor, indoor)
+        assert res_is.sum() == pytest.approx(storage - (q_ks[0] - q_ks[-1]))
