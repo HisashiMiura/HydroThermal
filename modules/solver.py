@@ -7,7 +7,7 @@ import numpy as np
 
 from modules.balance import heat_residual_is, moisture_residual_is
 from modules.boundary import IndoorBoundary, OutdoorBoundary
-from modules.newton import newton_solve
+from modules.newton import NewtonNotConverged, newton_solve
 from modules.thermo_dynamics import RW
 from modules.wall_geometry import WallGeometry
 from modules.wall_state import WallState
@@ -22,6 +22,16 @@ HEAT_RESIDUAL_TOL = 1.0e-6
 # 水分の残差の許容値, kg/(m2 s)（潜熱にすると熱の許容値と同じ大きさ：tol_h / r）
 MOISTURE_RESIDUAL_TOL = HEAT_RESIDUAL_TOL / RW
 
+# 収束しなかったとき、前の時刻の相対湿度がこの値以上の質点があれば、結露したとみなす, %
+CONDENSATION_RH = 99.9
+
+
+class Condensation(NewtonNotConverged):
+    """結露した：水分が入りすぎて、相対湿度 100% 以下（μ ≤ 0）では収支が合わない。
+
+    結露した水（水膜・結露水）を持つモデルは段階 7 で作る。それまでは、水を消さずにここで止める。
+    """
+
 
 def step(
         geometry: WallGeometry,
@@ -35,7 +45,7 @@ def step(
     未知数を (T_0, μ_0, T_1, μ_1, …) と並べ、熱と水分の残差をそれぞれの許容値で割って（許容値の何倍かにして）、
     交互に並べた残差が 0 になるように、ニュートン法で求める（許容値 1）。最初の仮の値は前の時刻の状態。
     最初の仮の値の残差が許容値より小さくても、1 回は修正する（平衡の近くで、1 ステップの変化が小さいと進まなくなるのを防ぐ）。
-    μ ≤ 0（相対湿度 100% 以下）を守る仕組みは、まだ入れていない（段階 5-8）。
+    収束せず、前の時刻に相対湿度が CONDENSATION_RH 以上の質点があれば、結露したとして Condensation を出す。
 
     Args:
         geometry: 壁の形
@@ -46,6 +56,10 @@ def step(
 
     Returns:
         次の時刻の状態、ニュートン法の修正の回数
+
+    Raises:
+        Condensation: 結露して、相対湿度 100% 以下では収支が合わないとき
+        NewtonNotConverged: それ以外の理由で収束しなかったとき
     """
 
     # 未知数の並び x_ps を、温度と水分化学ポテンシャルに分けて、許容値で割った残差を交互に並べて返す関数（この 1 ステップ専用）
@@ -69,6 +83,22 @@ def step(
     x0_ps[0::2], x0_ps[1::2] = state_n.t_is, state_n.mu_is
 
     # 残差が 0（許容値の 1 倍以下）になる未知数を探す（1 回は必ず修正する）
-    x_ps, m = newton_solve(residual, x0_ps, band=HEAT_MOISTURE_BAND, tol=1.0, min_iter=1)
+    try:
+        x_ps, m = newton_solve(residual, x0_ps, band=HEAT_MOISTURE_BAND, tol=1.0, min_iter=1)
+    except NewtonNotConverged as e:
+
+        # 前の時刻に、相対湿度が 100% に近い質点の番号
+        rh_n_is = state_n.rh_is
+        i_wet_is = np.flatnonzero(rh_n_is >= CONDENSATION_RH)
+
+        # 100% に近い質点がなければ、結露ではない理由で収束しなかったので、そのまま例外を出す
+        if len(i_wet_is) == 0:
+            raise
+
+        # 100% に近い質点があれば、結露したとして、質点の番号・層の番号・相対湿度を伝える
+        where = '、'.join(
+            f'質点 {i}（層 {geometry.nodes[i].layer_index}、{rh_n_is[i]:.3f}%）' for i in i_wet_is
+        )
+        raise Condensation(f'結露しました（相対湿度 100% 以下では水分の収支が合いません）：{where}。') from e
 
     return WallState(t_is=x_ps[0::2], mu_is=x_ps[1::2]), m

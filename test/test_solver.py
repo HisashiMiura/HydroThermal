@@ -3,7 +3,8 @@ import pytest
 
 from modules.balance import heat_capacity_is, heat_flow_ks, liquid_flow_ks, vapour_flow_ks, water_amount_is
 from modules.boundary import IndoorBoundary, OutdoorBoundary
-from modules.solver import HEAT_RESIDUAL_TOL, MOISTURE_RESIDUAL_TOL, step
+from modules.newton import NewtonNotConverged
+from modules.solver import HEAT_RESIDUAL_TOL, MOISTURE_RESIDUAL_TOL, Condensation, step
 from modules.state import State
 from modules.thermo_dynamics import ATP, RW, get_wp
 from modules.wall_builder import build_wall
@@ -145,3 +146,16 @@ class TestStep:
         assert state.rh_is.max() < 100.0
         q_ks = _total_heat_flow_ks(g, state, outdoor, indoor)
         np.testing.assert_allclose(q_ks, q_ks.mean(), rtol=1e-5)
+
+    def test_condensation(self):
+        # 構造用合板1 の 1 層、外気 -5 deg.C・90%、室内 25 deg.C・95%。
+        # 室内側から入る水蒸気を外表面から逃がせず、外側の質点（0 番目）が飽和すると、結露として止まる
+        g, state = _one_layer('構造用合板1', 0.009, 6, 0.0, 95.0)
+        outdoor, indoor = _outdoor(-5.0, 90.0), _indoor(25.0, 95.0)
+        with pytest.raises(Condensation, match='質点 0（層 0'):
+            for _ in range(24 * 30):
+                state, _ = step(g, state, dt=3600.0, outdoor=outdoor, indoor=indoor)
+
+    def test_condensation_is_not_converged(self):
+        # 結露は、収束しなかったことの一種（NewtonNotConverged で受けても捕まえられる）
+        assert issubclass(Condensation, NewtonNotConverged)
