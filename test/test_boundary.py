@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from modules.boundary import IndoorBoundary, OutdoorBoundary
+from modules.boundary import Boundaries, IndoorBoundary, OutdoorBoundary
 from modules.state import State
 from modules.thermo_dynamics import ATP
 
@@ -46,3 +46,21 @@ class TestBoundary:
         # state に State 以外を渡すとエラー
         with pytest.raises(ValueError, match='室内'):
             IndoorBoundary(state=(293.15, -1.0e7))
+
+
+class TestBoundaries:
+
+    def test_make(self):
+        # 外気と室内の組を作れる
+        outdoor = OutdoorBoundary.from_theta_rh(theta=0.0, rh=80.0)
+        indoor = IndoorBoundary.from_theta_rh(theta=20.0, rh=50.0)
+        b = Boundaries(outdoor=outdoor, indoor=indoor)
+        assert b.outdoor is outdoor
+        assert b.indoor is indoor
+
+    def test_swapped(self):
+        # 外気と室内を取り違えるとエラー
+        outdoor = OutdoorBoundary.from_theta_rh(theta=0.0, rh=80.0)
+        indoor = IndoorBoundary.from_theta_rh(theta=20.0, rh=50.0)
+        with pytest.raises(ValueError, match='outdoor'):
+            Boundaries(outdoor=indoor, indoor=outdoor)

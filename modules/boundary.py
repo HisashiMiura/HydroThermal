@@ -69,3 +69,23 @@ class IndoorBoundary:
     def from_theta_rh(cls, theta: float, rh: float) -> Self:
         """室温（deg.C）と相対湿度（%）から作る。"""
         return cls(state=_state_from_theta_rh(theta, rh))
+
+
+@dataclass(frozen=True, kw_only=True)
+class Boundaries:
+    """ある時刻の外気と室内の境界条件の組（1 ステップを進めるのに使う）。"""
+
+    # 外気の境界条件
+    outdoor: OutdoorBoundary
+
+    # 室内の境界条件
+    indoor: IndoorBoundary
+
+    def __post_init__(self):
+        """作るときに値を確かめる。"""
+
+        # 外気・室内の境界条件のクラスでなければエラー（取り違えを防ぐ）
+        if not isinstance(self.outdoor, OutdoorBoundary):
+            raise ValueError(f'outdoor は OutdoorBoundary にしてください（{type(self.outdoor).__name__}）。')
+        if not isinstance(self.indoor, IndoorBoundary):
+            raise ValueError(f'indoor は IndoorBoundary にしてください（{type(self.indoor).__name__}）。')
