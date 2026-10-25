@@ -14,6 +14,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Self
 
+import numpy as np
+
+from modules.boundary import SolarRadiation
 from modules.direction import Direction
 from modules.material_loaders import load_materials
 from modules.materials import Material, Materials
@@ -346,7 +349,7 @@ class Surface:
 
     入力の外表面（wall_input.SurfaceInput）から、WallGeometry.from_input で作る。
     値は入力で確かめ済みなので、ここでは確かめない。
-    日射量・風速などの計算は、段階 6（境界条件）でここに足す（今の wall_surface.WallSurface から移す）。
+    外表面の日射の熱は solar_heat_gain（今の wall_surface.WallSurface.get_q_sol_d_t_k から移した）。風速は段階 7 で足す。
     """
 
     # 方位（真上・真下を向いた面は TOP・BOTTOM）
@@ -366,6 +369,40 @@ class Surface:
 
     # 風速を求める評価高さ, m
     eva_height: float
+
+    def solar_heat_gain(self, solar: SolarRadiation) -> float:
+        """外表面に外から直接入る熱 q_sol = a I - ε F_sky RN, W/m2（日射の吸収 - 夜間放射）。
+
+        I は壁面に当たる日射（直達 ＋ 天空 ＋ 地面の反射）、F_sky = (1 + cos β) / 2 は天空に対する形態係数。
+        下向きの面も特別扱いしない（直達と天空は 0 になり、地面の反射だけが入る）。
+
+        Args:
+            solar: 太陽の位置と、日射・夜間放射
+        """
+
+        # 傾斜角, rad
+        beta = np.radians(self.angle)
+
+        # 方位角, rad（上向き・下向きの面は方位がないので 0 とする。sin β = 0 なので答えに効かない）
+        alpha = 0.0 if self.direction.alpha is None else np.radians(self.direction.alpha)
+
+        # 入射角の余弦, -
+        cos_i = (np.cos(beta) * solar.sin_h
+                 + np.sin(beta) * solar.cos_h * (solar.cos_a * np.cos(alpha) + solar.sin_a * np.sin(alpha)))
+
+        # 直達日射, W/m2（太陽が面の裏側にあれば 0）
+        i_d = max(solar.i_dn * cos_i, 0.0)
+
+        # 天空に対する形態係数, -
+        f_sky = (1.0 + np.cos(beta)) / 2.0
+
+        # 天空日射, W/m2
+        i_s = solar.i_sky * f_sky
+
+        # 地面の反射, W/m2（水平面全天日射 × アルベド × 地面に対する形態係数）
+        i_r = (solar.i_dn * solar.sin_h + solar.i_sky) * self.albedo * (1.0 - f_sky)
+
+        return float(self.absorptance * (i_d + i_s + i_r) - self.emissivity * f_sky * solar.r_n)
 
 
 # 材料を探す関数：(出どころ, 名称) → 材料

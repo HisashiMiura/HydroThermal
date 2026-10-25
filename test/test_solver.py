@@ -2,11 +2,11 @@ import numpy as np
 import pytest
 
 from modules.balance import heat_capacity_is, heat_flow_ks, liquid_flow_ks, vapour_flow_ks, water_amount_is
-from modules.boundary import IndoorBoundary, OutdoorBoundary
+from modules.boundary import IndoorBoundary, OutdoorBoundary, SolarRadiation
 from modules.newton import NewtonNotConverged
 from modules.solver import HEAT_RESIDUAL_TOL, MOISTURE_RESIDUAL_TOL, Condensation, step
 from modules.state import State
-from modules.thermo_dynamics import ATP, RW, get_wp
+from modules.thermo_dynamics import ATP, GOFF, RW, get_wp
 from modules.wall_builder import build_wall
 from modules.wall_geometry import WallGeometry
 from modules.wall_input import WallInput
@@ -159,3 +159,35 @@ class TestStep:
     def test_condensation_is_not_converged(self):
         # 結露は、収束しなかったことの一種（NewtonNotConverged で受けても捕まえられる）
         assert issubclass(Condensation, NewtonNotConverged)
+
+    def test_sol_air_temperature(self):
+        # 日射ありの計算と、日射なしで外気温を q_sol / α_o（相当外気温度）にした計算は、毎ステップ一致する。
+        # 外気の水蒸気圧はそろえる。外表面の質点の熱の収支が、式の上で同じになるため
+        g, state_a = _one_layer('構造用合板1', 0.009, 6, 10.0, 50.0)
+        state_b = state_a
+        solar = SolarRadiation(sin_h=0.5, cos_h=3 ** 0.5 / 2, sin_a=0.0, cos_a=1.0, i_dn=600.0, i_sky=150.0, r_n=40.0)
+        q_sol = g.surface.solar_heat_gain(solar)
+        assert q_sol > 0.0
+
+        # 外表面の熱伝達率 α_o, W/(m2 K)（外気と質点 0 のつながりの熱抵抗の逆数）
+        alpha_o = 1.0 / g.links[0].r_h
+
+        outdoor_a = OutdoorBoundary(state=_outdoor(0.0, 80.0).state, solar=solar)
+        t_sol_air = outdoor_a.state.t + q_sol / alpha_o
+        outdoor_b = OutdoorBoundary(state=State.init(t=t_sol_air, rh=100.0 * outdoor_a.state.p_v / GOFF(t_sol_air)[1]))
+        assert outdoor_b.state.p_v == pytest.approx(outdoor_a.state.p_v)
+        indoor = _indoor(20.0, 50.0)
+
+        # 比べるための、日射なし・外気温もそのままの計算
+        state_c = state_a
+        outdoor_c = OutdoorBoundary(state=outdoor_a.state)
+
+        for _ in range(20):
+            state_a, _ = step(g, state_a, dt=180.0, outdoor=outdoor_a, indoor=indoor)
+            state_b, _ = step(g, state_b, dt=180.0, outdoor=outdoor_b, indoor=indoor)
+            state_c, _ = step(g, state_c, dt=180.0, outdoor=outdoor_c, indoor=indoor)
+        np.testing.assert_allclose(state_a.t_is, state_b.t_is, rtol=0.0, atol=1e-6)
+        np.testing.assert_allclose(state_a.rh_is, state_b.rh_is, rtol=0.0, atol=1e-6)
+
+        # 日射の分だけ、外表面の質点は日射なしより温かい
+        assert state_a.t_is[0] > state_c.t_is[0] + 1.0

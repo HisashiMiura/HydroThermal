@@ -217,14 +217,16 @@ def heat_residual_is(
         t_n_is: np.ndarray,
         dt: float,
         outdoor: OutdoorBoundary,
-        indoor: IndoorBoundary
+        indoor: IndoorBoundary,
+        q_sol: float = 0.0
     ) -> np.ndarray:
     """質点ごとの熱の収支の残差 res_h,i, W/m2, [i]（docs/governing_equations.md の式 6.3）。
 
-    res_h,i = C_i (T_i - T_i^n) / Δt - (Q_in,i - Q_out,i)（たまる量 -（入ってくる熱 - 出ていく熱））。
+    res_h,i = C_i (T_i - T_i^n) / Δt - (Q_in,i - Q_out,i + q_sol,i)（たまる量 -（入ってくる熱 - 出ていく熱 + 外から直接入る熱））。
     つながりの熱の流れ Q_k = q_k + r j_v,k（熱伝導 + 水蒸気が運ぶ潜熱）。r は蒸発潜熱。
     C_i は水の分を足した熱容量で、次の時刻の仮の値で計算する。液水が運ぶ顕熱は入れない（量が非常に小さい）。
     「入る」「出る」は外気側から室内側へ流れる向きで見た言い方で、流れが負のときも式はそのまま正しく働く。
+    外表面の質点（0 番目）には、外から直接入る熱 q_sol（日射の吸収 - 夜間放射）も入る。
     正しい次の時刻の温度・水分化学ポテンシャルを入れると 0 になる。
 
     Args:
@@ -235,6 +237,7 @@ def heat_residual_is(
         dt: 時間刻み, s
         outdoor: 次の時刻の外気の境界条件
         indoor: 次の時刻の室内の境界条件
+        q_sol: 外表面に外から直接入る熱, W/m2（wall_geometry.Surface.solar_heat_gain）
     """
 
     # 各質点の熱容量 C_i, J/(m2 K), [i]（乾燥した材料 + 含まれる水。次の時刻の仮の値で計算する）
@@ -249,5 +252,9 @@ def heat_residual_is(
     # 質点 i の右のつながり（つながり i + 1）へ出ていく熱, W/m2, [i]（q_ks の先頭を除く）
     q_out_is = q_ks[1:]
 
-    # たまる量 -（入ってくる熱 - 出ていく熱）
-    return c_is * (t_is - t_n_is) / dt - (q_in_is - q_out_is)
+    # 外から直接入る熱（日射の吸収 - 夜間放射）, W/m2, [i]（外表面の質点 0 だけ）
+    q_sol_is = np.zeros(len(t_is))
+    q_sol_is[0] = q_sol
+
+    # たまる量 -（入ってくる熱 - 出ていく熱 + 外から直接入る熱）
+    return c_is * (t_is - t_n_is) / dt - (q_in_is - q_out_is + q_sol_is)

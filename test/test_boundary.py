@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from modules.boundary import Boundaries, IndoorBoundary, OutdoorBoundary
+from modules.boundary import NO_SUN, Boundaries, IndoorBoundary, OutdoorBoundary, SolarRadiation
 from modules.state import State
 from modules.thermo_dynamics import ATP
 
@@ -64,3 +64,28 @@ class TestBoundaries:
         indoor = IndoorBoundary.from_theta_rh(theta=20.0, rh=50.0)
         with pytest.raises(ValueError, match='outdoor'):
             Boundaries(outdoor=indoor, indoor=outdoor)
+
+
+class TestSolarRadiation:
+
+    def test_default(self):
+        # 外気の日射の既定は、日射も夜間放射もない
+        outdoor = OutdoorBoundary.from_theta_rh(theta=0.0, rh=80.0)
+        assert outdoor.solar is NO_SUN
+        assert (NO_SUN.i_dn, NO_SUN.i_sky, NO_SUN.r_n) == (0.0, 0.0, 0.0)
+
+    def test_with_solar(self):
+        solar = SolarRadiation(sin_h=0.5, cos_h=0.866, sin_a=0.0, cos_a=1.0, i_dn=600.0, i_sky=150.0, r_n=40.0)
+        outdoor = OutdoorBoundary.from_theta_rh(theta=0.0, rh=80.0, solar=solar)
+        assert outdoor.solar is solar
+
+    @pytest.mark.parametrize('i_dn, i_sky', [(-1.0, 0.0), (0.0, -1.0)])
+    def test_negative(self, i_dn, i_sky):
+        # 日射量が負ならエラー
+        with pytest.raises(ValueError, match='日射量'):
+            SolarRadiation(sin_h=0.5, cos_h=0.866, sin_a=0.0, cos_a=1.0, i_dn=i_dn, i_sky=i_sky, r_n=0.0)
+
+    def test_not_solar(self):
+        # 外気の solar に SolarRadiation 以外を渡すとエラー
+        with pytest.raises(ValueError, match='solar'):
+            OutdoorBoundary(state=State(t=273.15, mu=-1.0e7), solar=(600.0, 150.0))
