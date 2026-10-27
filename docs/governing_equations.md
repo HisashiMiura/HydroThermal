@@ -45,7 +45,7 @@
 **熱伝導**
 
 $$
-q = -\lambda \frac{\partial T}{\partial x} \tag{3.1}
+q = -\lambda \frac{\partial T}{\partial x} \qquad (3.1)
 $$
 
 λ：熱伝導率 [W/(m K)]
@@ -53,7 +53,7 @@ $$
 **水蒸気の流れ**（水蒸気圧の差で流れる）
 
 $$
-J_v = -\lambda_p' \frac{\partial p_v}{\partial x} \tag{3.2}
+J_v = -\lambda_p' \frac{\partial p_v}{\partial x} \qquad (3.2)
 $$
 
 $\lambda_p'$：湿気伝導率（透湿率）[kg/(m s Pa)]。相対湿度によって変わる。
@@ -61,7 +61,7 @@ $\lambda_p'$：湿気伝導率（透湿率）[kg/(m s Pa)]。相対湿度によ�
 **液水の流れ**（水分化学ポテンシャルの差で流れる）
 
 $$
-J_l = -\lambda_{\mu l}' \frac{\partial \mu}{\partial x} \tag{3.3}
+J_l = -\lambda_{\mu l}' \frac{\partial \mu}{\partial x} \qquad (3.3)
 $$
 
 $\lambda_{\mu l}'$：水分化学ポテンシャル勾配に対する液相水分伝導率 [kg/(m s (J/kg))]。液水拡散係数 $D_w$ [m²/s]（含水量 w の勾配に対する値）とは、次の関係にある。
@@ -69,7 +69,7 @@ $\lambda_{\mu l}'$：水分化学ポテンシャル勾配に対する液相水�
 $$
 J_l = -D_w \frac{\partial w}{\partial x} = -D_w \frac{\partial w}{\partial \mu} \frac{\partial \mu}{\partial x}
 \quad\Rightarrow\quad
-\lambda_{\mu l}' = D_w \frac{\partial w}{\partial \mu} = \rho_s D_w \frac{\partial u}{\partial \mu} = \rho_w D_w \frac{\partial \psi}{\partial \mu} \tag{3.4}
+\lambda_{\mu l}' = D_w \frac{\partial w}{\partial \mu} = \rho_s D_w \frac{\partial u}{\partial \mu} = \rho_w D_w \frac{\partial \psi}{\partial \mu} \qquad (3.4)
 $$
 
 **水分の流れ**は、水蒸気と液水の和 $J = J_v + J_l$ [kg/(m² s)]。
@@ -87,19 +87,19 @@ $$
 液水の収支：
 
 $$
-\frac{\partial (\rho_w \psi)}{\partial t} = -\frac{\partial J_l}{\partial x} + W \tag{4.1}
+\frac{\partial (\rho_w \psi)}{\partial t} = -\frac{\partial J_l}{\partial x} + W \qquad (4.1)
 $$
 
 水蒸気の収支（空隙のうち液水で満たされていない部分 $\Phi_0 - \psi$ に水蒸気がある。 $\Phi_0$：乾燥時の空隙率）：
 
 $$
-\frac{\partial \lbrace (\Phi_0 - \psi) \rho_v\rbrace }{\partial t} = -\frac{\partial J_v}{\partial x} - W \tag{4.2}
+\frac{\partial \lbrace (\Phi_0 - \psi) \rho_v\rbrace }{\partial t} = -\frac{\partial J_v}{\partial x} - W \qquad (4.2)
 $$
 
 2 つを足すと、相変化の量 W が消えて、水分の収支になる。
 
 $$
-\frac{\partial}{\partial t}\left\lbrace  \rho_w \psi + (\Phi_0 - \psi)\rho_v \right\rbrace  = -\frac{\partial}{\partial x}(J_v + J_l) \tag{4.3}
+\frac{\partial}{\partial t}\left\lbrace  \rho_w \psi + (\Phi_0 - \psi)\rho_v \right\rbrace  = -\frac{\partial}{\partial x}(J_v + J_l) \qquad (4.3)
 $$
 
 ### 4.2 熱の収支
@@ -107,12 +107,12 @@ $$
 材料の実質部・液水・水蒸気のエンタルピーの収支を書き、液水と水蒸気の収支式（4.1・4.2）を使って整理すると、次の式になる（参考文献 [1]）。
 
 $$
-c\rho \thinspace \frac{\partial T}{\partial t} = -\frac{\partial q}{\partial x} + r W \tag{4.4}
+c\rho \thinspace \frac{\partial T}{\partial t} = -\frac{\partial q}{\partial x} + r W \qquad (4.4)
 $$
 
 - $c\rho$：水分を含んだ材料のみかけの容積比熱 [J/(m³ K)]
 
-  $$c\rho = c_s \rho_s + c_w \rho_w \psi + c_v \rho_v (\Phi_0 - \psi) \tag{4.5}$$
+  $$c\rho = c_s \rho_s + c_w \rho_w \psi + c_v \rho_v (\Phi_0 - \psi) \qquad (4.5)$$
 
   （ $c_s$・ $c_w$・ $c_v$：材料の実質部・液水・水蒸気の比熱。 $\rho_s$ は材料の乾燥密度で、 $c_s \rho_s$ は乾燥した材料の容積比熱）
 - $r$：水蒸気が液水になるときの相変化熱 [J/kg]（蒸発潜熱）
@@ -132,7 +132,7 @@ $$
 水蒸気の収支（式 4.2）で、たまる水蒸気の変化を省くと $W = -\partial J_v / \partial x$ になる。これを式 4.4 に入れると、相変化熱の項は「水蒸気が運ぶ潜熱の流れ $r J_v$」の発散になる。
 
 $$
-c\rho \thinspace \frac{\partial T}{\partial t} = -\frac{\partial}{\partial x}\left( q + r J_v \right) \tag{4.6}
+c\rho \thinspace \frac{\partial T}{\partial t} = -\frac{\partial}{\partial x}\left( q + r J_v \right) \qquad (4.6)
 $$
 
 ---
@@ -146,7 +146,7 @@ $$
 **水分の収支**
 
 $$
-\frac{\partial w}{\partial t} = \frac{\partial}{\partial x}\left( \lambda_p' \frac{\partial p_v}{\partial x} + \lambda_{\mu l}' \frac{\partial \mu}{\partial x} \right) \tag{5.1}
+\frac{\partial w}{\partial t} = \frac{\partial}{\partial x}\left( \lambda_p' \frac{\partial p_v}{\partial x} + \lambda_{\mu l}' \frac{\partial \mu}{\partial x} \right) \qquad (5.1)
 $$
 
 （通気層の空気では、左辺は $\partial \rho_v / \partial t$、右辺の液水の項はない）
@@ -154,7 +154,7 @@ $$
 **熱の収支**
 
 $$
-c\rho \thinspace \frac{\partial T}{\partial t} = \frac{\partial}{\partial x}\left( \lambda \frac{\partial T}{\partial x} + r \lambda_p' \frac{\partial p_v}{\partial x} \right) \tag{5.2}
+c\rho \thinspace \frac{\partial T}{\partial t} = \frac{\partial}{\partial x}\left( \lambda \frac{\partial T}{\partial x} + r \lambda_p' \frac{\partial p_v}{\partial x} \right) \qquad (5.2)
 $$
 
 ここで、 $w = \rho_s u(\varphi)$、 $\varphi = \exp(\mu / (R_v T))$、 $p_v = \varphi \thinspace p_{sat}(T)$、 $c\rho = c_s \rho_s + c_w w$。
@@ -184,7 +184,7 @@ $$
 表面と空気の間の流れは、伝達率で表す。
 
 $$
-q_s = \alpha \thinspace (T_a - T_s), \qquad J_{v,s} = \alpha_p' \thinspace (p_{v,a} - p_{v,s}) \tag{5.3}
+q_s = \alpha \thinspace (T_a - T_s), \qquad J_{v,s} = \alpha_p' \thinspace (p_{v,a} - p_{v,s}) \qquad (5.3)
 $$
 
 α：総合熱伝達率 [W/(m² K)]、 $\alpha_p'$：湿気伝達率 [kg/(m² s Pa)]、添字 a は空気、s は表面。
@@ -206,7 +206,7 @@ $$
 $$
 q_k = \frac{T_L - T_R}{R_{h,k}}, \qquad
 j_{v,k} = \frac{p_{v,L} - p_{v,R}}{R_{m,k}}, \qquad
-j_{l,k} = \frac{\mu_L - \mu_R}{R_{l,k}} \tag{6.1}
+j_{l,k} = \frac{\mu_L - \mu_R}{R_{l,k}} \qquad (6.1)
 $$
 
 - 材料の中の半分の抵抗は、距離 d を使って $d/\lambda$、 $d/\lambda_p'$、 $d/\lambda_{\mu l}'$。湿気伝導率と液水伝導率は、その側の質点の状態で計算する。
@@ -229,13 +229,13 @@ $$
 **水分の残差** [kg/(m² s)]
 
 $$
-\mathrm{res}_{m,i} = \frac{W_i - W_i^n}{\Delta t} - \left\lbrace  (j_{v,i} + j_{l,i}) - (j_{v,i+1} + j_{l,i+1}) \right\rbrace  \tag{6.2}
+\mathrm{res}_{m,i} = \frac{W_i - W_i^n}{\Delta t} - \left\lbrace  (j_{v,i} + j_{l,i}) - (j_{v,i+1} + j_{l,i+1}) \right\rbrace  \qquad (6.2)
 $$
 
 **熱の残差** [W/m²]
 
 $$
-\mathrm{res}_{h,i} = C_i \thinspace \frac{T_i - T_i^n}{\Delta t} - \left\lbrace  (q_i + r j_{v,i}) - (q_{i+1} + r j_{v,i+1}) \right\rbrace  - Q_i \tag{6.3}
+\mathrm{res}_{h,i} = C_i \thinspace \frac{T_i - T_i^n}{\Delta t} - \left\lbrace  (q_i + r j_{v,i}) - (q_{i+1} + r j_{v,i+1}) \right\rbrace  - Q_i \qquad (6.3)
 $$
 
 $Q_i$：質点 i に外から入る熱 [W/m²]（外表面の日射・夜間放射、通気層の換気など。段階 6・7）。
